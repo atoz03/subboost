@@ -1,0 +1,59 @@
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import type { CustomRoutingRuleSetItem } from "@subboost/core/rules/custom-routing-rule-sets";
+import type { CustomRule } from "@subboost/core/types/config";
+
+vi.mock("lucide-react", () => ({
+  ArrowRight: () => null,
+  Shield: () => null,
+}));
+
+import { CustomRulesPreview } from "./custom-rules-preview";
+
+describe("CustomRulesPreview", () => {
+  it("renders nothing when there are no custom rules or rule sets", () => {
+    expect(renderToStaticMarkup(React.createElement(CustomRulesPreview, { customRules: [] }))).toBe("");
+  });
+
+  it("renders custom rules, rule sets, no-resolve labels, and overflow summary", () => {
+    const customRules: CustomRule[] = Array.from({ length: 9 }, (_, index) => ({
+      id: index === 0 ? "" : `rule-${index}`,
+      type: index === 0 ? "DOMAIN-SUFFIX" : "IP-CIDR",
+      value: `example-${index}.com`,
+      target: index % 2 === 0 ? "PROXY" : "DIRECT",
+      noResolve: index % 3 === 0,
+    }));
+    const ruleSets: CustomRoutingRuleSetItem[] = [
+      {
+        key: "set-1",
+        source: { kind: "module", id: "reject" },
+        id: "set-1",
+        name: "private",
+        behavior: "domain",
+        noResolve: true,
+        path: "rules/private.yaml",
+        target: { kind: "module", id: "reject", name: "REJECT", value: "module:reject" },
+      },
+      {
+        key: "set-2",
+        source: { kind: "module", id: "direct" },
+        id: "set-2",
+        name: "direct",
+        behavior: "ipcidr",
+        path: "rules/direct.yaml",
+        target: { kind: "module", id: "direct", name: "DIRECT", value: "module:direct" },
+      },
+    ];
+
+    const html = renderToStaticMarkup(React.createElement(CustomRulesPreview, { customRules, ruleSets }));
+
+    expect(html).toContain("自定义规则");
+    expect(html).toContain("(11)");
+    expect(html).toContain("DOMAIN-SUFFIX");
+    expect(html).toContain("RULE-SET");
+    expect(html).toContain("no-resolve");
+    expect(html).toContain("... 还有 1 条规则");
+    expect(html).toContain("rules/private.yaml");
+  });
+});

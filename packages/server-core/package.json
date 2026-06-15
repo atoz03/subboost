@@ -1,0 +1,24 @@
+{
+  "name": "@subboost/server-core",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./app-version": "./src/app-version.ts",
+    "./cron-auth": "./src/cron-auth.ts",
+    "./crypto": "./src/crypto/index.ts",
+    "./crypto/*": "./src/crypto/*",
+    "./http": "./src/http.ts",
+    "./rules": "./src/rules/index.ts",
+    "./rules/*": "./src/rules/*",
+    "./templates": "./src/templates/index.ts",
+    "./templates/*": "./src/templates/*",
+    "./subscription": "./src/subscription/index.ts",
+    "./subscription/*": "./src/subscription/*"
+  },
+  "dependencies": {
+    "@subboost/core": "file:../core"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "@subboost/core",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api/*": "./src/api/*",
+    "./config/*": "./src/config/*",
+    "./filtered-proxy-groups": "./src/filtered-proxy-groups.ts",
+    "./generator": "./src/generator/index.ts",
+    "./generator/*": "./src/generator/*",
+    "./json": "./src/json.ts",
+    "./mihomo/*": "./src/mihomo/*",
+    "./node-name-template": "./src/node-name-template.ts",
+    "./node-identity": "./src/node-identity.ts",
+    "./parser": "./src/parser/index.ts",
+    "./parser/*": "./src/parser/*",
+    "./proxy-group-name": "./src/proxy-group-name.ts",
+    "./rules/*": "./src/rules/*",
+    "./rules-database": "./src/rules-database.ts",
+    "./subscription/*": "./src/subscription/*",
+    "./templates": "./src/templates/index.ts",
+    "./templates/*": "./src/templates/*",
+    "./time/*": "./src/time/*",
+    "./types": "./src/types/index.ts",
+    "./types/*": "./src/types/*"
+  },
+  "dependencies": {
+    "js-yaml": "^4.2.0",
+    "peggy": "^5.1.0"
+  }
+}

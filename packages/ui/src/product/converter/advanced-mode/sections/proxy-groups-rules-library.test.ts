@@ -1,0 +1,478 @@
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  captures: {} as Record<string, any[]>,
+  effectiveRulesByModule: {} as Record<string, any[]>,
+  interactions: {
+    ruleAdded: vi.fn(),
+  },
+  search: {} as Record<string, any>,
+  store: {} as Record<string, any>,
+  toast: vi.fn(),
+}));
+
+const stateMock = vi.hoisted(() => ({
+  callIndex: 0,
+  enabled: false,
+  effects: [] as Array<() => void | (() => void)>,
+  overrides: {} as Record<number, unknown>,
+  setters: [] as Array<ReturnType<typeof vi.fn>>,
+}));
+
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  return {
+    ...actual,
+    useState: (initial: unknown) => {
+      if (!stateMock.enabled) return actual.useState(initial);
+      const index = stateMock.callIndex++;
+      const value = Object.prototype.hasOwnProperty.call(stateMock.overrides, index)
+        ? stateMock.overrides[index]
+        : initial;
+      const setter = vi.fn((next: unknown) => {
+        const resolved = typeof next === "function" ? (next as (prev: unknown) => unknown)(value) : next;
+        (setter as any).lastValue = resolved;
+        return resolved;
+      });
+      stateMock.setters[index] = setter;
+      return [value, setter];
+    },
+    useEffect: (effect: () => void | (() => void), deps?: React.DependencyList) => {
+      if (!stateMock.enabled) return actual.useEffect(effect, deps);
+      stateMock.effects.push(effect);
+      return undefined;
+    },
+  };
+});
+
+vi.mock("react/jsx-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react/jsx-runtime")>();
+  const capture = (type: unknown, props: any) => {
+    if (type === "button" && typeof props?.onClick === "function") {
+      (mocks.captures.nativeButtons ||= []).push(props);
+    }
+    if (type === "div" && typeof props?.onClick === "function") {
+      (mocks.captures.nativeDivs ||= []).push(props);
+    }
+  };
+  return {
+    ...actual,
+    jsx: (type: unknown, props: any, key?: string) => {
+      capture(type, props);
+      return actual.jsx(type as any, props, key);
+    },
+    jsxs: (type: unknown, props: any, key?: string) => {
+      capture(type, props);
+      return actual.jsxs(type as any, props, key);
+    },
+  };
+});
+
+vi.mock("lucide-react", () => ({
+  Check: () => null,
+  Loader2: () => null,
+  Search: () => null,
+  X: () => null,
+}));
+vi.mock("@subboost/ui/components/ui/badge", () => ({
+  Badge: (props: any) => {
+    mocks.captures.badges.push(props);
+    return React.createElement("span", props, props.children);
+  },
+}));
+vi.mock("@subboost/ui/components/ui/button", () => ({
+  Button: (props: any) => {
+    mocks.captures.buttons.push(props);
+    return React.createElement("button", props, props.children);
+  },
+}));
+vi.mock("@subboost/ui/components/ui/input", () => ({
+  Input: (props: any) => {
+    mocks.captures.inputs.push(props);
+    return React.createElement("input", {
+      onChange: props.onChange,
+      placeholder: props.placeholder,
+      value: props.value,
+    });
+  },
+}));
+vi.mock("@subboost/ui/components/ui/select", () => ({
+  Select: (props: any) => {
+    mocks.captures.selects.push(props);
+    return React.createElement("select", null, props.children);
+  },
+  SelectContent: (props: any) => React.createElement(React.Fragment, null, props.children),
+  SelectItem: (props: any) => React.createElement("option", { value: props.value }, props.children),
+  SelectTrigger: (props: any) => React.createElement(React.Fragment, null, props.children),
+  SelectValue: (props: any) => React.createElement("span", null, props.placeholder),
+}));
+vi.mock("@subboost/ui/components/ui/toaster", () => ({ toast: mocks.toast }));
+vi.mock("@subboost/core/generator/proxy-groups", () => ({
+  PROXY_GROUP_MODULES: [
+    { id: "auto", name: "Auto", rules: [] },
+    { id: "fallback", name: "Fallback", rules: [] },
+  ],
+}));
+vi.mock("@subboost/core/generator/module-rules", () => ({
+  getEffectiveModuleRules: vi.fn((module: { id: string }) => mocks.effectiveRulesByModule[module.id] || []),
+}));
+vi.mock("@subboost/core/proxy-group-name", () => ({
+  resolveProxyGroupModuleName: (module: { name: string }, override?: string) => override || module.name,
+}));
+vi.mock("@subboost/core/rules/metadata", () => ({
+  RULE_CATEGORIES: {
+    streaming: { name: "流媒体" },
+    telegram: { name: "通讯" },
+  },
+}));
+vi.mock("@subboost/ui/store/config-store", () => {
+  const useConfigStore = () => mocks.store;
+  (useConfigStore as any).getState = () => mocks.store;
+  return { useConfigStore };
+});
+vi.mock("@subboost/ui/product/interactions", () => ({
+  useProductInteractionAdapter: () => mocks.interactions,
+}));
+vi.mock("./proxy-groups-added-rule-sets", () => ({
+  ProxyGroupsAddedRuleSets: (props: any) => {
+    mocks.captures.addedRuleSets.push(props);
+    return React.createElement("div", null, props.showSearchHint ? "added-rules-hint" : "added-rules");
+  },
+}));
+vi.mock("./proxy-groups-rules-search", () => ({
+  getRuleDisplayName: (rule: any) => rule.nameZh || rule.name || rule.id,
+  replaceRuleProviderBase: (url: string, base: string) => {
+    const match = url.match(/\/(geosite|geoip)\/[^/]+\.mrs$/);
+    return match ? `${base.replace(/\/+$/, "")}/${match[1]}/${url.split("/").pop()}` : url;
+  },
+  useRulesLibrarySearch: () => mocks.search,
+}));
+
+import { ProxyGroupsRulesLibrary } from "./proxy-groups-rules-library";
+
+const netflixRule = {
+  id: "netflix",
+  nameZh: "Netflix",
+  behavior: "domain",
+  category: "streaming",
+  url: "https://raw.example/geosite/netflix.mrs",
+};
+
+const telegramRule = {
+  id: "telegram",
+  nameZh: "Telegram",
+  behavior: "ipcidr",
+  category: "telegram",
+  url: "https://raw.example/geoip/telegram.mrs",
+};
+
+const invalidRule = {
+  id: "invalid",
+  nameZh: "Invalid",
+  behavior: "domain",
+  category: "streaming",
+  url: "https://raw.example/invalid.txt",
+};
+
+const unknownCategoryRule = {
+  id: "unknown-category",
+  nameZh: "Unknown Category",
+  behavior: "domain",
+  category: "unknown",
+  url: "https://raw.example/geosite/unknown-category.mrs",
+};
+
+function renderLibrary(overrides: Record<number, unknown> = {}) {
+  stateMock.enabled = true;
+  stateMock.callIndex = 0;
+  stateMock.overrides = overrides;
+  stateMock.effects = [];
+  stateMock.setters = [];
+  mocks.captures = { addedRuleSets: [], badges: [], buttons: [], inputs: [], nativeButtons: [], nativeDivs: [], selects: [] };
+  try {
+    const html = renderToStaticMarkup(React.createElement(ProxyGroupsRulesLibrary));
+    return { html, setters: stateMock.setters };
+  } finally {
+    stateMock.enabled = false;
+  }
+}
+
+describe("ProxyGroupsRulesLibrary", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.captures = { addedRuleSets: [], badges: [], buttons: [], inputs: [], nativeButtons: [], nativeDivs: [], selects: [] };
+    mocks.effectiveRulesByModule = {};
+    mocks.search = {
+      ruleSearchKeyword: "netflix",
+      setRuleSearchKeyword: vi.fn(),
+      searchResults: [netflixRule, telegramRule],
+      rulesSearchLoading: false,
+      rulesSearchLoadingMore: false,
+      rulesSearchError: "",
+      rulesSearchSource: "fresh",
+      totalMatched: 2,
+      totalRules: 30,
+      canLoadMore: false,
+      handleLoadMore: vi.fn(),
+    };
+    mocks.store = {
+      ruleProviderBaseUrl: "https://rules.example/",
+      enabledProxyGroups: ["auto"],
+      hiddenProxyGroups: [],
+      toggleProxyGroup: vi.fn(),
+      moduleRuleOverrides: {},
+      moduleRuleExclusions: {},
+      addModuleRules: vi.fn(),
+      customProxyGroups: [{ id: "custom-1", name: "Custom", rules: [] }],
+      updateCustomProxyGroup: vi.fn(),
+      proxyGroupNameOverrides: { auto: "Auto", fallback: "Fallback" },
+    };
+  });
+
+  it("renders search states and forwards search controls", () => {
+    const { html } = renderLibrary();
+    expect(html).toContain("匹配 2");
+    expect(mocks.captures.addedRuleSets[0]).toEqual({ showSearchHint: false, totalRules: 30 });
+    mocks.captures.inputs[0].onChange({ target: { value: "steam" } });
+    expect(mocks.search.setRuleSearchKeyword).toHaveBeenCalledWith("steam");
+
+    mocks.search.rulesSearchLoading = true;
+    expect(renderLibrary().html).toContain("搜索中");
+
+    mocks.search.rulesSearchLoading = false;
+    mocks.search.rulesSearchError = "bad query";
+    expect(renderLibrary().html).toContain("bad query");
+
+    mocks.search.rulesSearchError = "";
+    mocks.search.searchResults = [];
+    mocks.search.totalMatched = 0;
+    expect(renderLibrary().html).toContain("未找到相关规则");
+
+    mocks.search.searchResults = [netflixRule];
+    mocks.search.totalMatched = 3;
+    mocks.search.rulesSearchSource = "stale";
+    mocks.search.canLoadMore = true;
+    renderLibrary();
+    mocks.captures.buttons.find((props) => props.onClick === mocks.search.handleLoadMore).onClick();
+    expect(mocks.search.handleLoadMore).toHaveBeenCalled();
+
+    mocks.search.ruleSearchKeyword = "rare";
+    mocks.search.searchResults = [unknownCategoryRule];
+    mocks.search.totalMatched = 1;
+    mocks.search.totalRules = 0;
+    expect(renderLibrary().html).toContain("匹配 1 · 规则库");
+    expect(renderLibrary().html).toContain("unknown");
+
+    mocks.search.ruleSearchKeyword = " ";
+    mocks.search.totalRules = 42;
+    expect(renderLibrary().html).toContain("42 规则");
+  });
+
+  it("shows assigned rules and enables a disabled built-in group", () => {
+    mocks.effectiveRulesByModule.auto = [{ id: "netflix" }];
+    let result = renderLibrary();
+    expect(result.html).toContain("已启用");
+    expect(result.html).toContain("属于");
+
+    mocks.store.enabledProxyGroups = [];
+    renderLibrary();
+    mocks.captures.buttons.find((props) => props.children === "开启代理组").onClick();
+    expect(mocks.store.toggleProxyGroup).toHaveBeenCalledWith("auto");
+
+    mocks.effectiveRulesByModule = {};
+    mocks.store.customProxyGroups = [
+      { id: "custom-1", name: "Custom", rules: [{ id: "telegram" }] },
+    ];
+    result = renderLibrary();
+    expect(result.html).toContain("Custom");
+    expect(result.html).toContain("已添加");
+  });
+
+  it("adds selected rules to a custom group", () => {
+    const { setters } = renderLibrary({ 0: [telegramRule], 1: "custom:custom-1" });
+    mocks.captures.selects[0].onValueChange("module:auto");
+    expect(setters[1]).toHaveBeenCalledWith("module:auto");
+
+    mocks.captures.buttons.find((props) => props.children === "添加").onClick();
+
+    expect(mocks.store.updateCustomProxyGroup).toHaveBeenCalledWith("custom-1", {
+      rules: [
+        {
+          id: "telegram",
+          name: "Telegram",
+          behavior: "ipcidr",
+          url: "https://rules.example/geoip/telegram.mrs",
+          noResolve: true,
+        },
+      ],
+    });
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "已添加规则集" }));
+    expect(mocks.interactions.ruleAdded).toHaveBeenCalledWith({ source: "library", kind: "ruleset" });
+    expect(setters[0]).toHaveBeenCalledWith([]);
+  });
+
+  it("adds valid selected rules to a module and reports skipped invalid rules", () => {
+    mocks.store.enabledProxyGroups = [];
+    const { html } = renderLibrary({ 0: [netflixRule, invalidRule], 1: "module:auto" });
+    expect(html).toContain("已选择");
+
+    mocks.captures.buttons.find((props) => props.children === "添加").onClick();
+
+    expect(mocks.store.toggleProxyGroup).toHaveBeenCalledWith("auto");
+    expect(mocks.store.addModuleRules).toHaveBeenCalledWith("auto", [
+      {
+        id: "netflix",
+        name: "Netflix",
+        behavior: "domain",
+        path: "geosite/netflix.mrs",
+        noResolve: false,
+      },
+    ]);
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "已添加规则集",
+      description: expect.stringContaining("1 条无法识别"),
+    }));
+  });
+
+  it("warns when selected rules conflict or add nothing new", () => {
+    mocks.effectiveRulesByModule.auto = [{ id: "netflix" }];
+    renderLibrary({ 0: [netflixRule], 1: "custom:custom-1" });
+    mocks.captures.buttons.find((props) => props.children === "添加").onClick();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "规则集已在其他分流组中",
+      variant: "warning",
+    }));
+    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+
+    mocks.effectiveRulesByModule = {};
+    mocks.store.customProxyGroups = [
+      { id: "custom-1", name: "Custom", rules: [{ id: "telegram" }] },
+    ];
+    renderLibrary({ 0: [telegramRule], 1: "custom:custom-1" });
+    mocks.captures.buttons.find((props) => props.children === "添加").onClick();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "没有新增规则集",
+      variant: "warning",
+    }));
+  });
+
+  it("clears hidden module targets and toggles unassigned rule selection", () => {
+    renderLibrary({ 1: "custom:custom-1" });
+    stateMock.effects[0]();
+    expect(stateMock.setters[1]).not.toHaveBeenCalledWith("");
+
+    const { setters } = renderLibrary({ 1: "module:missing" });
+    stateMock.effects[0]();
+    expect(setters[1]).toHaveBeenCalledWith("");
+
+    renderLibrary({ 1: "module:auto" });
+    stateMock.effects[0]();
+    expect(stateMock.setters[1]).not.toHaveBeenCalledWith("");
+
+    renderLibrary();
+    const firstRuleDiv = mocks.captures.nativeDivs.find((props) => String(props.className).includes("cursor-pointer"));
+    firstRuleDiv.onClick();
+    expect(stateMock.setters[0]).toHaveBeenCalledWith([netflixRule]);
+
+    renderLibrary({ 0: [netflixRule] });
+    const selectedRuleDiv = mocks.captures.nativeDivs.find((props) => String(props.className).includes("cursor-pointer"));
+    selectedRuleDiv.onClick();
+    expect(stateMock.setters[0]).toHaveBeenCalledWith([]);
+  });
+
+  it("clears and removes selected rule chips", () => {
+    const selectedRules = [
+      netflixRule,
+      telegramRule,
+      invalidRule,
+      { ...netflixRule, id: "steam", nameZh: "Steam" },
+      { ...netflixRule, id: "google", nameZh: "Google" },
+      { ...netflixRule, id: "youtube", nameZh: "YouTube" },
+    ];
+    const { html } = renderLibrary({ 0: selectedRules, 1: "custom:custom-1" });
+    expect(html).toContain("+1");
+
+    mocks.captures.nativeButtons.find((props) => props.children === "清空").onClick();
+    expect(stateMock.setters[0]).toHaveBeenCalledWith([]);
+
+    mocks.captures.badges.find((props) => typeof props.onClick === "function").onClick();
+    expect(stateMock.setters[0]).toHaveBeenCalledWith(selectedRules.slice(1));
+  });
+
+  it("ignores invalid add targets before mutating groups", () => {
+    const addButton = () => mocks.captures.buttons.find((props) => props.children === "添加");
+
+    renderLibrary({ 0: [], 1: "custom:custom-1" });
+    expect(addButton()).toBeUndefined();
+    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.addModuleRules).not.toHaveBeenCalled();
+
+    renderLibrary({ 0: [netflixRule], 1: "__label_custom__" });
+    addButton().onClick();
+    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.addModuleRules).not.toHaveBeenCalled();
+
+    renderLibrary({ 0: [netflixRule], 1: "bad:target" });
+    addButton().onClick();
+    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.addModuleRules).not.toHaveBeenCalled();
+
+    mocks.store.hiddenProxyGroups = ["auto"];
+    renderLibrary({ 0: [netflixRule], 1: "module:auto" });
+    addButton().onClick();
+    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.addModuleRules).not.toHaveBeenCalled();
+
+    mocks.store.hiddenProxyGroups = [];
+    mocks.store.customProxyGroups = [];
+    renderLibrary({ 0: [netflixRule], 1: "custom:missing" });
+    addButton().onClick();
+    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.addModuleRules).not.toHaveBeenCalled();
+  });
+
+  it("handles existing module rules and enabled module additions", () => {
+    mocks.effectiveRulesByModule.auto = [{ id: "netflix" }];
+    renderLibrary({ 0: [netflixRule], 1: "module:auto" });
+    mocks.captures.buttons.find((props) => props.children === "添加").onClick();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "没有新增规则集",
+      description: expect.stringContaining("1 条已存在"),
+      variant: "warning",
+    }));
+    expect(mocks.store.addModuleRules).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    mocks.effectiveRulesByModule = {};
+    mocks.store.enabledProxyGroups = ["auto"];
+    renderLibrary({ 0: [netflixRule], 1: "module:auto" });
+    mocks.captures.buttons.find((props) => props.children === "添加").onClick();
+    expect(mocks.store.toggleProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.addModuleRules).toHaveBeenCalledWith("auto", [
+      {
+        id: "netflix",
+        name: "Netflix",
+        behavior: "domain",
+        path: "geosite/netflix.mrs",
+        noResolve: false,
+      },
+    ]);
+
+    vi.clearAllMocks();
+    mocks.effectiveRulesByModule.auto = [{ id: "netflix" }, { id: "netflix" }];
+    mocks.store.customProxyGroups = [
+      { id: "custom-1", name: "Custom", rules: [{ id: "netflix" }, { id: "telegram" }] },
+    ];
+    renderLibrary({ 0: [telegramRule], 1: "module:fallback" });
+    mocks.captures.buttons.find((props) => props.children === "添加").onClick();
+    expect(mocks.store.addModuleRules).not.toHaveBeenCalledWith("fallback", expect.arrayContaining([
+      expect.objectContaining({ id: "telegram" }),
+    ]));
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "规则集已在其他分流组中",
+      variant: "warning",
+    }));
+  });
+});

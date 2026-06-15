@@ -1,0 +1,183 @@
+import { describe, expect, it } from "vitest";
+import { getModulesForTemplate } from "@subboost/core/generator/proxy-groups";
+import {
+  SUBBOOST_TEMPLATE_CONFIG_SCHEMA,
+  validateSubBoostTemplateConfig,
+} from "@subboost/core/templates/config-template";
+import { DEFAULT_LOAD_BALANCE_STRATEGY } from "@subboost/core/types/config";
+import { expectInvalid, validConfig } from "./config-template.test-helpers";
+
+describe("validateSubBoostTemplateConfig", () => {
+  it("accepts a minimal v1 config template", () => {
+    const result = validateSubBoostTemplateConfig(validConfig());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.config.schema).toBe(SUBBOOST_TEMPLATE_CONFIG_SCHEMA);
+      expect(result.config.template).toBe("minimal");
+      expect(result.config.enabledProxyGroups.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects non-object and wrong-template configs", () => {
+    expect(validateSubBoostTemplateConfig(null).ok).toBe(false);
+    expect(validateSubBoostTemplateConfig(validConfig({ schema: "legacy" as never }))).toEqual({
+      ok: false,
+      error: "模板配置 schema 无效",
+    });
+    expect(validateSubBoostTemplateConfig(validConfig({ template: "bad" as never })).ok).toBe(false);
+  });
+
+  it("rejects invalid numeric fields", () => {
+    expectInvalid({ mixedPort: 0 }, "mixedPort 必须是正整数");
+    expect(validateSubBoostTemplateConfig(validConfig({ mixedPort: 70000 })).ok).toBe(false);
+    expectInvalid({ testInterval: 1.5 }, "testInterval 必须是正整数");
+    expect(validateSubBoostTemplateConfig(validConfig({ testInterval: -1 })).ok).toBe(false);
+  });
+
+  it("rejects invalid array fields", () => {
+    const result = validateSubBoostTemplateConfig({
+      ...validConfig(),
+      enabledProxyGroups: "minimal",
+    });
+
+    expect(result.ok).toBe(false);
+    expectInvalid({ enabledProxyGroups: [] }, "至少需要一个代理组");
+    expectInvalid({ enabledProxyGroups: ["missing"] }, "enabledProxyGroups 包含未知代理组");
+    expectInvalid({ hiddenProxyGroups: ["missing"] }, "hiddenProxyGroups 包含未知代理组");
+    expectInvalid({ ruleOrder: [1 as never] }, "ruleOrder 只能包含字符串");
+  });
+
+  it("normalizes rich template config fields", () => {
+    const moduleId = getModulesForTemplate("minimal")[0];
+    const result = validateSubBoostTemplateConfig(
+      validConfig({
+        hiddenProxyGroups: [],
+        customProxyGroups: [
+          {
+            id: "custom",
+            name: "Custom",
+            emoji: "",
+            groupType: "load-balance",
+            rules: [
+              {
+                id: "custom-rule",
+                name: "Custom Rule",
+                behavior: "domain",
+                url: "https://rules.example.com/custom.mrs",
+                noResolve: false,
+              },
+            ],
+          },
+        ],
+        filteredProxyGroups: [
+          {
+            id: "filtered",
+            name: "Filtered",
+            enabled: true,
+            groupType: "load-balance",
+            sourceIds: ["source-a", "source-a", ""],
+            regions: ["us", "hk"],
+            excludedNodeNames: ["Node A", "Node A"],
+            includeRegex: " US ",
+            excludeRegex: "IPv6",
+            emoji: "F",
+          },
+        ],
+        customRules: [
+          {
+            id: "custom-rule-a",
+            type: "DOMAIN-SUFFIX",
+            value: " example.com ",
+            target: "DIRECT",
+            noResolve: true,
+          },
+        ],
+        dialerProxyGroups: [
+          {
+            id: "relay",
+            name: "Relay",
+            type: "url-test",
+            relayNodes: ["Relay A", "Relay A", ""],
+            targetNodes: ["Target A", "Target A"],
+            enabled: false,
+          },
+        ],
+        moduleRuleOverrides: {
+          [moduleId]: [
+            {
+              id: "extra",
+              name: "Extra",
+              behavior: "ipcidr",
+              path: "geoip/private.mrs",
+              noResolve: true,
+            },
+          ],
+        },
+        moduleRuleExclusions: {
+          [moduleId]: ["rule-a", "rule-a", ""],
+        },
+        proxyGroupNameOverrides: {
+          [moduleId]: " Renamed ",
+          empty: " ",
+        },
+        ruleOrder: ["missing", "missing"],
+        allRulesOrderEditingEnabled: true,
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.customProxyGroups[0]).toMatchObject({
+      id: "custom",
+      name: "Custom",
+      emoji: "",
+      groupType: "load-balance",
+      strategy: DEFAULT_LOAD_BALANCE_STRATEGY,
+    });
+    expect(result.config.filteredProxyGroups?.[0]).toMatchObject({
+      id: "filtered",
+      groupType: "load-balance",
+      strategy: DEFAULT_LOAD_BALANCE_STRATEGY,
+      sourceIds: ["source-a"],
+      regions: ["us", "hk"],
+      excludedNodeNames: ["Node A"],
+      includeRegex: "US",
+      excludeRegex: "IPv6",
+      emoji: "F",
+    });
+    expect(result.config.customRules[0]).toMatchObject({
+      id: "custom-rule-a",
+      value: "example.com",
+      noResolve: true,
+    });
+    expect(result.config.dialerProxyGroups[0]).toMatchObject({
+      id: "relay",
+      type: "url-test",
+      relayNodes: ["Relay A"],
+      targetNodes: ["Target A"],
+      enabled: false,
+    });
+    expect(result.config.moduleRuleOverrides?.[moduleId]?.[0]).toMatchObject({
+      id: "extra",
+      behavior: "ipcidr",
+      path: "geoip/private.mrs",
+      noResolve: true,
+    });
+    expect(result.config.moduleRuleExclusions?.[moduleId]).toEqual(["rule-a"]);
+    expect(result.config.proxyGroupNameOverrides).toEqual({ [moduleId]: "Renamed" });
+    expect(result.config.allRulesOrderEditingEnabled).toBe(true);
+  });
+
+  it("rejects template configs that hide every enabled module", () => {
+    const enabledProxyGroups = getModulesForTemplate("minimal");
+    const result = validateSubBoostTemplateConfig(
+      validConfig({
+        enabledProxyGroups,
+        hiddenProxyGroups: enabledProxyGroups,
+      })
+    );
+
+    expect(result).toEqual({ ok: false, error: "至少需要一个可见代理组" });
+  });
+});
