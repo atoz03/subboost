@@ -464,7 +464,14 @@ describe("local subscription service", () => {
   });
 
   it("generates YAML and updates access time when a subscription has nodes or proxy providers", async () => {
-    await expect(generateSubscriptionYaml("token-1")).resolves.toBe("mixed-port: 7890\n");
+    await expect(generateSubscriptionYaml("token-1")).resolves.toMatchObject({
+      yaml: "mixed-port: 7890\n",
+      name: "Saved",
+      subscriptionInfo: { upload: 2048, total: 4096 },
+      cacheExpirySeconds: 3600,
+      autoUpdateIntervalSeconds: 86400,
+      isAdmin: true,
+    });
     expect(mocks.buildGenerateOptionsFromConfig).toHaveBeenCalledWith(
       expect.objectContaining({ sources: expect.any(Array) }),
       expect.objectContaining({ nodes: [expect.objectContaining({ name: "Node" })], proxyProviders: null })
@@ -487,6 +494,6 @@ describe("local subscription service", () => {
       row({ encryptedNodes: JSON.stringify([]), encryptedConfig: JSON.stringify({ proxyProviders: { provider: {} } }) })
     );
     mocks.buildProxyProvidersFromConfig.mockReturnValueOnce({ provider: { url: "https://example.com/provider.yaml" } });
-    await expect(generateSubscriptionYaml("provider-only")).resolves.toBe("mixed-port: 7890\n");
+    await expect(generateSubscriptionYaml("provider-only")).resolves.toMatchObject({ yaml: "mixed-port: 7890\n" });
   });
 });

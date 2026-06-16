@@ -8,6 +8,7 @@ export * from "./fetch-profile-heuristics";
 export * from "./manual-refresh-response";
 export * from "./refresh-cache-result";
 export * from "./refresh-node-snapshot";
+export * from "./response-headers";
 export * from "./saved-sources";
 export * from "./source-import";
 export * from "./ssrf-ip";

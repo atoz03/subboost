@@ -215,11 +215,10 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
     } catch (error) {
       console.error("Failed to fetch subscription YAML for download:", error);
-      triggerBrowserDownload(subscription.subscriptionUrl, filename);
       toast({
-        title: "已改用浏览器直接下载",
-        description: "如果仍然打开新页面，请稍后刷新页面后再试。",
-        variant: "warning",
+        title: "下载失败",
+        description: "请刷新页面后重试，或先复制订阅链接到代理软件。",
+        variant: "destructive",
       });
     }
   };

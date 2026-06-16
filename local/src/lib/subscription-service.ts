@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { generateClashYaml } from "@subboost/core/generator";
 import { buildGenerateOptionsFromConfig, getEffectiveTestOptions } from "@subboost/core/subscription/config-utils";
 import { buildProxyProvidersFromConfig } from "@subboost/core/subscription/proxy-providers";
+import type { SubscriptionResponseInfo } from "@subboost/core/subscription/subscription-response-info";
 import type { ParsedNode } from "@subboost/core/types/node";
 import {
   buildManualRefreshFailureResponse,
@@ -85,6 +86,15 @@ export type SubscriptionDetail = SubscriptionSummary & {
   nodes: ParsedNode[];
   config: Record<string, unknown>;
   subscriptionInfo: Record<string, unknown>;
+};
+
+export type GeneratedSubscriptionYaml = {
+  yaml: string;
+  name: string;
+  subscriptionInfo: SubscriptionResponseInfo;
+  cacheExpirySeconds: number;
+  autoUpdateIntervalSeconds: number | null;
+  isAdmin: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -357,7 +367,7 @@ export async function refreshSubscription(ownerId: string, id: string) {
   };
 }
 
-export async function generateSubscriptionYaml(token: string): Promise<string | null> {
+export async function generateSubscriptionYaml(token: string): Promise<GeneratedSubscriptionYaml | null> {
   const row = await prisma.subscription.findUnique({ where: { token }, include: { autoUpdateState: true } });
   if (!row) return null;
   const secrets = readSubscriptionSecrets(row);
@@ -371,5 +381,12 @@ export async function generateSubscriptionYaml(token: string): Promise<string | 
     })
   );
   await prisma.subscription.update({ where: { id: row.id }, data: { lastAccessedAt: new Date() } });
-  return yaml;
+  return {
+    yaml,
+    name: row.name,
+    subscriptionInfo: secrets.subscriptionInfo,
+    cacheExpirySeconds: CACHE_TTL_SECONDS,
+    autoUpdateIntervalSeconds: row.autoUpdateInterval,
+    isAdmin: true,
+  };
 }

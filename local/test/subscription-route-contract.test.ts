@@ -91,7 +91,19 @@ beforeEach(() => {
   vi.mocked(getCurrentAdmin).mockResolvedValue(admin);
   vi.mocked(createSubscription).mockResolvedValue(subscription as never);
   vi.mocked(deleteSubscription).mockResolvedValue(true);
-  vi.mocked(generateSubscriptionYaml).mockResolvedValue("mixed-port: 7890\n");
+  vi.mocked(generateSubscriptionYaml).mockResolvedValue({
+    yaml: "mixed-port: 7890\n",
+    name: "Main",
+    subscriptionInfo: {
+      upload: 64,
+      download: 128,
+      total: 1024,
+      expire: 1781635200,
+    },
+    cacheExpirySeconds: 3600,
+    autoUpdateIntervalSeconds: 86400,
+    isAdmin: true,
+  } as never);
   vi.mocked(getSubscription).mockResolvedValue(subscription as never);
   vi.mocked(listSubscriptions).mockResolvedValue([subscription] as never);
   vi.mocked(refreshSubscription).mockResolvedValue({
@@ -138,7 +150,12 @@ describe("local subscription routes", () => {
       params: Promise.resolve({ id: "token-1" }),
     });
     expect(pluralResponse.status).toBe(200);
-    expect(pluralResponse.headers.get("content-disposition")).toBe('attachment; filename="subboost-config"');
+    expect(pluralResponse.headers.get("content-disposition")).toContain('filename="Main"');
+    expect(pluralResponse.headers.get("content-disposition")).not.toContain(".yaml");
+    expect(pluralResponse.headers.get("subscription-userinfo")).toBe(
+      "upload=64; download=128; total=1024; expire=1781635200"
+    );
+    expect(pluralResponse.headers.get("profile-update-interval")).toBe("24");
     expect(await pluralResponse.text()).toBe("mixed-port: 7890\n");
     expect(generateSubscriptionYaml).toHaveBeenCalledWith("token-1");
   });

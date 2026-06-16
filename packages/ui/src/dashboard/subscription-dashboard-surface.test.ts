@@ -362,7 +362,7 @@ describe("SubscriptionDashboardSurface", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:subboost-config");
   });
 
-  it("falls back to direct browser download when fetching the YAML fails", async () => {
+  it("reports download failures without opening the subscription URL", async () => {
     const dom = stubDocumentActions();
     vi.stubGlobal("fetch", vi.fn(async () => {
       throw new Error("cors");
@@ -372,12 +372,10 @@ describe("SubscriptionDashboardSurface", () => {
     await mocks.captures.buttons.find((props: any) => props.title === "下载订阅配置").onClick();
     await flushPromises();
 
-    expect(dom.anchor.href).toBe("https://example.com/sub");
-    expect(dom.anchor.download).toBe("Primary.yaml");
-    expect(dom.anchor.click).toHaveBeenCalled();
+    expect(dom.createElement).not.toHaveBeenCalledWith("a");
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-      title: "已改用浏览器直接下载",
-      variant: "warning",
+      title: "下载失败",
+      variant: "destructive",
     }));
   });
 
