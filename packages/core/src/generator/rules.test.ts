@@ -106,7 +106,7 @@ describe("rule generator", () => {
   });
 
   it("handles Apple TV+ deletion and moves without special-rule leftovers", () => {
-    const enabledModules = PROXY_GROUP_MODULES.map((module) => module.id);
+    const enabledModules = PROXY_GROUP_MODULES.map((proxyModule) => proxyModule.id);
     const baseConfig = {
       nodes: [],
       template: "full" as const,
@@ -190,7 +190,7 @@ describe("rule generator", () => {
 
   it("keeps inactive preset anchors so deleted or moved rules can restore their full-order position", () => {
     const options = {
-      enabledModules: PROXY_GROUP_MODULES.map((module) => module.id),
+      enabledModules: PROXY_GROUP_MODULES.map((proxyModule) => proxyModule.id),
       customRules: [],
       customProxyGroups: [],
       fallbackPolicyTarget: "DIRECT",
@@ -199,22 +199,22 @@ describe("rule generator", () => {
       .filter((entry) => entry.key !== "special:match")
       .map((entry) => entry.key);
 
-    for (const module of PROXY_GROUP_MODULES) {
-      for (const rule of module.rules) {
-        const sourceKey = `module:${module.id}:${rule.id}`;
-        const targetModuleId = module.id === "google" ? "ai" : "google";
+    for (const proxyModule of PROXY_GROUP_MODULES) {
+      for (const rule of proxyModule.rules) {
+        const sourceKey = `module:${proxyModule.id}:${rule.id}`;
+        const targetModuleId = proxyModule.id === "google" ? "ai" : "google";
         const movedKey = `module:${targetModuleId}:${rule.id}`;
         const baselineIndex = baselineOrder.indexOf(sourceKey);
         expect(baselineIndex).toBeGreaterThanOrEqual(0);
 
         const afterDeleteOrder = normalizePersistedRuleOrder({
           ...options,
-          moduleRuleExclusions: { [module.id]: [rule.id] },
+          moduleRuleExclusions: { [proxyModule.id]: [rule.id] },
           ruleOrder: baselineOrder,
         });
         const afterDeleteApplied = resolveAppliedRuleOrder({
           ...options,
-          moduleRuleExclusions: { [module.id]: [rule.id] },
+          moduleRuleExclusions: { [proxyModule.id]: [rule.id] },
           ruleOrder: afterDeleteOrder,
         });
         const afterRestoreApplied = resolveAppliedRuleOrder({
@@ -223,13 +223,13 @@ describe("rule generator", () => {
         });
         const afterMoveOrder = normalizePersistedRuleOrder({
           ...options,
-          moduleRuleExclusions: { [module.id]: [rule.id] },
+          moduleRuleExclusions: { [proxyModule.id]: [rule.id] },
           moduleRuleOverrides: { [targetModuleId]: [rule] },
           ruleOrder: baselineOrder,
         });
         const afterMoveApplied = resolveAppliedRuleOrder({
           ...options,
-          moduleRuleExclusions: { [module.id]: [rule.id] },
+          moduleRuleExclusions: { [proxyModule.id]: [rule.id] },
           moduleRuleOverrides: { [targetModuleId]: [rule] },
           ruleOrder: afterMoveOrder,
         });
