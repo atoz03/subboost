@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "npm --workspace @subboost/local run dev",
     "build": "npm --workspace @subboost/local run build",
+    "pretest:unit": "npm run local:db:generate",
     "test:unit": "vitest run",
     "test:core": "vitest run --config vitest.core.config.ts",
     "lint": "eslint local packages --max-warnings=0",
