@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const publicRoot = path.resolve(__dirname, "../..");
 
 function runBash(script: string) {
-  return spawnSync("bash", ["-lc", "setsid bash -s"], {
+  return spawnSync("bash", ["-lc", "if command -v setsid >/dev/null 2>&1; then exec setsid \"$BASH\" -s; fi; exec \"$BASH\" -s"], {
     cwd: publicRoot,
     encoding: "utf8",
     input: script,
