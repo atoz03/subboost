@@ -51,20 +51,32 @@ describe("local setup admin route", () => {
     mocks.readJsonBody.mockResolvedValueOnce(null);
     expect(await readJson(await POST(new Request("https://local.test/api/setup/admin")))).toMatchObject({
       status: 400,
-      body: { error: "Invalid JSON body.", code: "BAD_REQUEST" },
+      body: { error: "请求格式有误，请刷新页面后重试", code: "BAD_REQUEST" },
     });
 
     mocks.readJsonBody.mockResolvedValueOnce({ username: "ry", password: "long-password", passwordConfirm: "long-password" });
     mocks.count.mockResolvedValueOnce(1);
     expect(await readJson(await POST(new Request("https://local.test/api/setup/admin")))).toMatchObject({
       status: 409,
-      body: { error: "Administrator already exists.", code: "CONFLICT" },
+      body: { error: "已有管理员账号，请直接登录", code: "CONFLICT" },
     });
 
     mocks.readJsonBody.mockResolvedValueOnce({ username: "ry", password: "short", passwordConfirm: "short" });
     expect(await readJson(await POST(new Request("https://local.test/api/setup/admin")))).toMatchObject({
       status: 400,
-      body: { error: "Invalid administrator credentials.", code: "BAD_REQUEST" },
+      body: { error: "密码至少需要 10 个字符", code: "BAD_REQUEST" },
+    });
+
+    mocks.readJsonBody.mockResolvedValueOnce({ username: "", password: "long-password", passwordConfirm: "long-password" });
+    expect(await readJson(await POST(new Request("https://local.test/api/setup/admin")))).toMatchObject({
+      status: 400,
+      body: { error: "请输入管理员账号", code: "BAD_REQUEST" },
+    });
+
+    mocks.readJsonBody.mockResolvedValueOnce({ username: "ry", password: "long-password", passwordConfirm: "different-password" });
+    expect(await readJson(await POST(new Request("https://local.test/api/setup/admin")))).toMatchObject({
+      status: 400,
+      body: { error: "两次输入的密码不一致，请重新确认", code: "BAD_REQUEST" },
     });
   });
 

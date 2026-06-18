@@ -76,14 +76,14 @@ describe("rule generator", () => {
   });
 
   it("removes deleted preset module rules from generated rules and providers", () => {
-    const enabledModules = PROXY_GROUP_MODULES.map((module) => module.id);
-    const allPresetRuleIds = PROXY_GROUP_MODULES.flatMap((module) => module.rules.map((rule) => rule.id));
+    const enabledModules = PROXY_GROUP_MODULES.map((proxyModule) => proxyModule.id);
+    const allPresetRuleIds = PROXY_GROUP_MODULES.flatMap((proxyModule) => proxyModule.rules.map((rule) => rule.id));
     const duplicateRuleIds = allPresetRuleIds.filter((id, index) => allPresetRuleIds.indexOf(id) !== index);
 
     expect(duplicateRuleIds).toEqual([]);
 
-    for (const module of PROXY_GROUP_MODULES) {
-      for (const rule of module.rules) {
+    for (const proxyModule of PROXY_GROUP_MODULES) {
+      for (const rule of proxyModule.rules) {
         const config = generateClashConfig({
           nodes: [],
           template: "full",
@@ -94,7 +94,7 @@ describe("rule generator", () => {
             ruleProviderBaseUrl: "https://example.com/rules",
             experimentalCnUseCnRuleSet: false,
           },
-          moduleRuleExclusions: { [module.id]: [rule.id] },
+          moduleRuleExclusions: { [proxyModule.id]: [rule.id] },
         });
         const rules = Array.isArray(config.rules) ? config.rules : [];
         const providers = config["rule-providers"] as Record<string, unknown> | undefined;

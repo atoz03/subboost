@@ -4,6 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { getLocalAdminSetupCredentialError, LOCAL_ADMIN_PASSWORD_MIN_LENGTH } from "@local/lib/admin-credentials";
 import { hasAuthConfigHandoff } from "@subboost/ui/store/config-store/auth-handoff";
 
 type AuthState = {
@@ -52,8 +53,11 @@ export function LocalLogin() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
-    if (setupRequired && password !== passwordConfirm) {
-      setError("两次输入的密码不一致");
+    const credentialError = setupRequired
+      ? getLocalAdminSetupCredentialError({ username, password, passwordConfirm })
+      : "";
+    if (credentialError) {
+      setError(credentialError);
       return;
     }
 
@@ -100,6 +104,7 @@ export function LocalLogin() {
                 <input
                   type={showPassword ? "text" : "password"}
                   autoComplete={setupRequired ? "new-password" : "current-password"}
+                  aria-describedby={setupRequired ? "local-admin-password-help" : undefined}
                   placeholder="密码"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -113,6 +118,11 @@ export function LocalLogin() {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {setupRequired ? (
+                <p id="local-admin-password-help" className="-mt-1 text-xs text-white/45">
+                  至少 {LOCAL_ADMIN_PASSWORD_MIN_LENGTH} 个字符
+                </p>
+              ) : null}
               {setupRequired ? (
                 <input
                   type={showPassword ? "text" : "password"}

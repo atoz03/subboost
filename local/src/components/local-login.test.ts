@@ -167,13 +167,30 @@ describe("local login component", () => {
 
     expect(html).toContain("初始化本地管理员账号");
     expect(html).toContain("创建管理员");
+    expect(html).toContain("至少 10 个字符");
     expect(mocks.inputs.find((input) => input.placeholder === "确认密码")).toEqual(
       expect.objectContaining({ autoComplete: "new-password" }),
     );
 
     await mocks.forms[0].onSubmit({ preventDefault: vi.fn() });
 
-    expect(setters[6]).toHaveBeenCalledWith("两次输入的密码不一致");
+    expect(setters[6]).toHaveBeenCalledWith("密码至少需要 10 个字符");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows setup password mismatch errors before sending a request", async () => {
+    installWindow();
+    (globalThis as any).fetch = vi.fn();
+    const { setters } = renderLogin({
+      0: { setupRequired: true, authenticated: false },
+      1: "admin",
+      2: "long-password",
+      3: "different-password",
+    });
+
+    await mocks.forms[0].onSubmit({ preventDefault: vi.fn() });
+
+    expect(setters[6]).toHaveBeenCalledWith("两次输入的密码不一致，请重新确认");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -213,8 +230,8 @@ describe("local login component", () => {
     const { setters } = renderLogin({
       0: { setupRequired: true, authenticated: false },
       1: "admin",
-      2: "secret",
-      3: "secret",
+      2: "long-secret",
+      3: "long-secret",
       4: true,
     });
 
@@ -227,7 +244,7 @@ describe("local login component", () => {
       "/api/setup/admin",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ username: "admin", password: "secret", passwordConfirm: "secret" }),
+        body: JSON.stringify({ username: "admin", password: "long-secret", passwordConfirm: "long-secret" }),
       }),
     );
     expect(setters[6]).toHaveBeenCalledWith("用户名已存在");
