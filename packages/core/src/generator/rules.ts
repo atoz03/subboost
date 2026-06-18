@@ -292,7 +292,6 @@ function buildCanonicalRuleEntries(options: Omit<RulesGenerateOptions, "ruleOrde
   const resolvePolicyTarget = createPolicyTargetResolver({ availablePolicyTargets, fallbackPolicyTarget });
   const editableEntries = buildOrderedEditableEntries(customRules, customProxyGroups, undefined, resolvePolicyTarget);
   let insertedEditableEntries = false;
-  let insertedAppleTvPlusRule = false;
 
   const pushEditableEntries = () => {
     if (insertedEditableEntries || editableEntries.length === 0) return;
@@ -307,14 +306,6 @@ function buildCanonicalRuleEntries(options: Omit<RulesGenerateOptions, "ruleOrde
       pushEditableEntries();
     }
 
-    if (!insertedAppleTvPlusRule && moduleId === "apple" && enabledSet.has("streaming-west")) {
-      insertedAppleTvPlusRule = true;
-      const target = resolvePolicyTarget(resolveModuleName("streaming-west", proxyGroupNameOverrides));
-      entries.push(
-        buildSpecialRuleEntry("special:apple-tvplus", `RULE-SET,apple-tvplus,${target}`, "Apple TV+", target)
-      );
-    }
-
     if (!enabledSet.has(moduleId)) continue;
     processedModules.add(moduleId);
 
@@ -323,9 +314,6 @@ function buildCanonicalRuleEntries(options: Omit<RulesGenerateOptions, "ruleOrde
 
     const effectiveRules = getEffectiveModuleRules(ruleModule, moduleRuleOverrides, moduleRuleExclusions);
     for (const rule of effectiveRules) {
-      if (insertedAppleTvPlusRule && ruleModule.id === "streaming-west" && rule.id === "apple-tvplus") {
-        continue;
-      }
       entries.push(buildModuleRuleEntry(ruleModule, rule, proxyGroupNameOverrides, cnIpNoResolve, resolvePolicyTarget));
     }
   }
