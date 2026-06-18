@@ -9,7 +9,7 @@ COPY packages/config packages/config
 COPY local/package*.json local/
 
 WORKDIR /package/local
-RUN npm install
+RUN npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /package
