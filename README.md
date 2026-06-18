@@ -35,8 +35,8 @@
 ## Usage & Deployment
 
 - [**Online entry**: A public service that can be used directly without deployment.](https://subboost.org/)
-- [**One-click deployment**: Best for beginners, using the public image to build the app.](https://docs.subboost.org/deploy/one-click)
-- [**Advanced deployment**: Best for advanced users, building the app from public source code.](https://docs.subboost.org/deploy/advanced)
+- Deployment docs: [One-click deployment - pulls an image to build, faster with lower requirements](https://docs.subboost.org/deploy/one-click)
+- Deployment docs: [Advanced deployment - compiles from source, slower with higher requirements](https://docs.subboost.org/deploy/advanced)
 - [**Configuration guide**: Clash configuration simple enough for a paramecium: configure precise routing and chained proxies from the UI in one click.](https://ryanvan.com/t/topic/59?u=ryan)
 
 ## Development Notes
