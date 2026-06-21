@@ -16,8 +16,10 @@ import {
   CATEGORY_INFO,
   PROXY_GROUP_MODULES,
 } from "@subboost/core/generator/proxy-groups";
+import type { ModuleRuleExclusions as HiddenPresetRuleIds } from "@subboost/core/generator/module-rules";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
-import { useConfigStore } from "@subboost/ui/store/config-store";
+import { buildRuleSetUrlFromPath } from "@subboost/core/rules/rule-model";
+import { useConfigStore, type ModuleRuleOverride } from "@subboost/ui/store/config-store";
 import {
   buildManualRuleTargets,
   listCustomRulesForTarget,
@@ -38,24 +40,24 @@ export function ProxyGroupsCategories() {
     toggleProxyGroup,
     hideProxyGroup,
     restoreHiddenProxyGroup,
-    moduleRuleOverrides,
-    moduleRuleExclusions,
+    customRuleSets = [],
+    builtinRuleEdits = {},
     moduleRuleEditWarningAccepted,
-    customRules,
+    customRules = [],
     updateCustomRule,
     removeCustomRule,
     addModuleRules,
     removeModuleRule,
     moveModuleRule,
     restoreModuleRule,
-    updateCustomProxyGroup,
+    resetModuleRuleTarget,
     acceptModuleRuleEditWarning,
-    proxyGroupNameOverrides,
+    proxyGroupNameOverrides = {},
     setProxyGroupNameOverride,
     clearProxyGroupNameOverride,
-    customProxyGroups,
-    filteredProxyGroups,
-    dialerProxyGroups,
+    customProxyGroups = [],
+    filteredProxyGroups = [],
+    dialerProxyGroups = [],
   } = useConfigStore();
 
   const [expandedCategories, setExpandedCategories] = React.useState<
@@ -132,6 +134,79 @@ export function ProxyGroupsCategories() {
     }
     return grouped;
   }, [hiddenProxyGroups]);
+  const targetRuleView = React.useMemo(() => {
+    const ruleSetsByTarget: Record<string, ModuleRuleOverride[]> = {};
+    const hiddenPresetRuleIds: HiddenPresetRuleIds = {};
+    const customGroupsWithRules = customProxyGroups.map((group) => ({
+      ...group,
+      rules: customRuleSets
+        .filter((ruleSet) => ruleSet.target === group.name)
+        .map((ruleSet) => ({
+          id: ruleSet.id,
+          name: ruleSet.name,
+          behavior: ruleSet.behavior,
+          url: buildRuleSetUrlFromPath(ruleSet.path, ruleProviderBaseUrl),
+          ...(ruleSet.noResolve ? { noResolve: true } : {}),
+        })),
+    }));
+    const moduleNameToId = new Map<string, string>();
+    for (const proxyModule of PROXY_GROUP_MODULES) {
+      moduleNameToId.set(resolveModuleDisplayName(proxyModule).full, proxyModule.id);
+    }
+
+    const pushRuleSetForTarget = (moduleId: string, rule: ModuleRuleOverride) => {
+      ruleSetsByTarget[moduleId] = [...(ruleSetsByTarget[moduleId] || []), rule];
+    };
+    const hidePresetRule = (moduleId: string, ruleId: string) => {
+      const prev = hiddenPresetRuleIds[moduleId] || [];
+      if (!prev.includes(ruleId)) hiddenPresetRuleIds[moduleId] = [...prev, ruleId];
+    };
+
+    for (const ruleSet of customRuleSets) {
+      const moduleId = moduleNameToId.get(ruleSet.target);
+      if (!moduleId) continue;
+      pushRuleSetForTarget(moduleId, {
+        id: ruleSet.id,
+        name: ruleSet.name,
+        behavior: ruleSet.behavior,
+        path: ruleSet.path,
+        ...(ruleSet.noResolve ? { noResolve: true } : {}),
+      });
+    }
+
+    for (const [key, edit] of Object.entries(builtinRuleEdits || {})) {
+      const match = key.match(/^module:([^:]+):(.+)$/);
+      if (!match) continue;
+      const [, sourceModuleId, ruleId] = match;
+      const sourceModule = PROXY_GROUP_MODULES.find((module) => module.id === sourceModuleId);
+      const sourceRule = sourceModule?.rules?.find((rule) => rule.id === ruleId);
+      if (!sourceModule || !sourceRule) continue;
+      const defaultTarget = resolveModuleDisplayName(sourceModule).full;
+
+      if (edit.enabled === false) hidePresetRule(sourceModuleId, ruleId);
+      if (edit.target && edit.target !== defaultTarget) {
+        hidePresetRule(sourceModuleId, ruleId);
+        const targetModuleId = moduleNameToId.get(edit.target);
+        if (targetModuleId) {
+          pushRuleSetForTarget(targetModuleId, {
+            id: sourceRule.id,
+            name: sourceRule.name,
+            behavior: sourceRule.behavior,
+            path: sourceRule.path,
+            ...(sourceRule.noResolve ? { noResolve: true } : {}),
+          });
+        }
+      }
+    }
+
+    return { ruleSetsByTarget, hiddenPresetRuleIds, customGroupsWithRules };
+  }, [
+    builtinRuleEdits,
+    customProxyGroups,
+    customRuleSets,
+    resolveModuleDisplayName,
+    ruleProviderBaseUrl,
+  ]);
 
   const hiddenModules = React.useMemo(() => {
     const hidden = new Set(hiddenProxyGroups);
@@ -251,7 +326,7 @@ export function ProxyGroupsCategories() {
                           );
                           const isEditing = editingModuleId === module.id;
                           const extraRules =
-                            moduleRuleOverrides?.[module.id] || [];
+                            targetRuleView.ruleSetsByTarget?.[module.id] || [];
                           const manualRules = listCustomRulesForTarget(
                             customRules,
                             display.full,
@@ -382,9 +457,9 @@ export function ProxyGroupsCategories() {
                               onCommitEditing={commitRename}
                               onHide={handleHideModule}
                               extraRules={extraRules}
-                              moduleRuleOverrides={moduleRuleOverrides}
-                              moduleRuleExclusions={moduleRuleExclusions}
-                              customProxyGroups={customProxyGroups}
+                              ruleSetsByTarget={targetRuleView.ruleSetsByTarget}
+                              hiddenPresetRuleIds={targetRuleView.hiddenPresetRuleIds}
+                              customProxyGroups={targetRuleView.customGroupsWithRules}
                               manualRules={manualRules}
                               manualRuleTargets={manualRuleTargets}
                               enabledProxyGroups={enabledProxyGroups}
@@ -410,32 +485,7 @@ export function ProxyGroupsCategories() {
                                 }
                               }}
                               onAddRuleToCustomGroup={(groupId, rule) => {
-                                const targetGroup = customProxyGroups.find(
-                                  (group) => group.id === groupId,
-                                );
-                                if (!targetGroup) return;
-                                if (
-                                  targetGroup.rules.some(
-                                    (item) => item.id === rule.id,
-                                  )
-                                ) {
-                                  return;
-                                }
-
-                                updateCustomProxyGroup(groupId, {
-                                  rules: [
-                                    ...targetGroup.rules,
-                                    {
-                                      id: rule.id,
-                                      name: rule.name,
-                                      behavior: rule.behavior,
-                                      url: `${ruleProviderBaseUrl.replace(/\/+$/, "")}/${rule.path}`,
-                                      ...(rule.noResolve
-                                        ? { noResolve: true }
-                                        : {}),
-                                    },
-                                  ],
-                                });
+                                addModuleRules(groupId, [rule]);
                               }}
                               onRemoveExtraRule={(ruleId) =>
                                 removeModuleRule(module.id, ruleId)
@@ -449,6 +499,9 @@ export function ProxyGroupsCategories() {
                               onRemoveManualRule={removeCustomRule}
                               onRestoreRule={(ruleId) =>
                                 restoreModuleRule(module.id, ruleId)
+                              }
+                              onResetRuleTarget={(ruleId) =>
+                                resetModuleRuleTarget(module.id, ruleId)
                               }
                               cnIpNoResolve={cnIpNoResolve}
                               onChangeCnIpNoResolve={setCnIpNoResolve}

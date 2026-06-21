@@ -59,15 +59,16 @@ describe("validateSubBoostTemplateConfig", () => {
             name: "Custom",
             emoji: "",
             groupType: "load-balance",
-            rules: [
-              {
-                id: "custom-rule",
-                name: "Custom Rule",
-                behavior: "domain",
-                url: "https://rules.example.com/custom.mrs",
-                noResolve: false,
-              },
-            ],
+          },
+        ],
+        customRuleSets: [
+          {
+            id: "custom-rule",
+            name: "Custom Rule",
+            behavior: "domain",
+            path: "https://rules.example.com/custom.mrs",
+            target: "Custom",
+            noResolve: false,
           },
         ],
         filteredProxyGroups: [
@@ -135,6 +136,23 @@ describe("validateSubBoostTemplateConfig", () => {
       groupType: "load-balance",
       strategy: DEFAULT_LOAD_BALANCE_STRATEGY,
     });
+    expect(result.config.customRuleSets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "custom-rule",
+          name: "Custom Rule",
+          behavior: "domain",
+          path: "https://rules.example.com/custom.mrs",
+          target: "Custom",
+        }),
+        expect.objectContaining({
+          id: "extra",
+          behavior: "ipcidr",
+          path: "geoip/private.mrs",
+          noResolve: true,
+        }),
+      ])
+    );
     expect(result.config.filteredProxyGroups?.[0]).toMatchObject({
       id: "filtered",
       groupType: "load-balance",
@@ -158,15 +176,11 @@ describe("validateSubBoostTemplateConfig", () => {
       targetNodes: ["Target A"],
       enabled: false,
     });
-    expect(result.config.moduleRuleOverrides?.[moduleId]?.[0]).toMatchObject({
-      id: "extra",
-      behavior: "ipcidr",
-      path: "geoip/private.mrs",
-      noResolve: true,
-    });
-    expect(result.config.moduleRuleExclusions?.[moduleId]).toEqual(["rule-a"]);
+    expect(result.config.builtinRuleEdits?.[`module:${moduleId}:rule-a`]).toEqual({ enabled: false });
     expect(result.config.proxyGroupNameOverrides).toEqual({ [moduleId]: "Renamed" });
-    expect(result.config.allRulesOrderEditingEnabled).toBe(true);
+    expect(result.config).not.toHaveProperty("moduleRuleOverrides");
+    expect(result.config).not.toHaveProperty("moduleRuleExclusions");
+    expect(result.config).not.toHaveProperty("allRulesOrderEditingEnabled");
   });
 
   it("rejects template configs that hide every enabled module", () => {

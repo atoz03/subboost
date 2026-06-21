@@ -10,7 +10,7 @@ import {
   PROXY_GROUP_MODULES,
   generateProxyGroups,
 } from "@subboost/core/generator/proxy-groups";
-import { getEffectiveModuleRules } from "@subboost/core/generator/module-rules";
+import { getModuleRuleOrderKey } from "@subboost/core/generator/module-rules";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
 import { collectCustomRoutingRuleSets } from "@subboost/core/rules/custom-routing-rule-sets";
 import { CustomRulesPreview } from "./visual-graph/custom-rules-preview";
@@ -31,9 +31,9 @@ export function VisualGraph() {
     dialerProxyGroups,
     customRules,
     customProxyGroups,
+    customRuleSets,
     filteredProxyGroups,
-    moduleRuleOverrides,
-    moduleRuleExclusions,
+    builtinRuleEdits,
     proxyGroupNameOverrides,
     proxyGroupOrder,
     testUrl,
@@ -44,14 +44,14 @@ export function VisualGraph() {
     useShallow((state) => ({
       nodes: state.nodes,
       enabledProxyGroups: state.enabledProxyGroups,
-      dialerProxyGroups: state.dialerProxyGroups,
-      customRules: state.customRules,
-      customProxyGroups: state.customProxyGroups,
-      filteredProxyGroups: state.filteredProxyGroups,
-      moduleRuleOverrides: state.moduleRuleOverrides,
-      moduleRuleExclusions: state.moduleRuleExclusions,
-      proxyGroupNameOverrides: state.proxyGroupNameOverrides,
-      proxyGroupOrder: state.proxyGroupOrder,
+      dialerProxyGroups: state.dialerProxyGroups ?? [],
+      customRules: state.customRules ?? [],
+      customProxyGroups: state.customProxyGroups ?? [],
+      customRuleSets: state.customRuleSets ?? [],
+      filteredProxyGroups: state.filteredProxyGroups ?? [],
+      builtinRuleEdits: state.builtinRuleEdits ?? {},
+      proxyGroupNameOverrides: state.proxyGroupNameOverrides ?? {},
+      proxyGroupOrder: state.proxyGroupOrder ?? [],
       testUrl: state.testUrl,
       testInterval: state.testInterval,
       ruleProviderBaseUrl: state.ruleProviderBaseUrl,
@@ -117,9 +117,9 @@ export function VisualGraph() {
       testUrl,
       testInterval,
       customProxyGroups,
+      customRuleSets,
       filteredProxyGroups,
-      moduleRuleOverrides,
-      moduleRuleExclusions,
+      builtinRuleEdits,
       proxyGroupNameOverrides,
     });
   }, [
@@ -129,9 +129,9 @@ export function VisualGraph() {
     testUrl,
     testInterval,
     customProxyGroups,
+    customRuleSets,
     filteredProxyGroups,
-    moduleRuleOverrides,
-    moduleRuleExclusions,
+    builtinRuleEdits,
     proxyGroupNameOverrides,
   ]);
 
@@ -163,17 +163,37 @@ export function VisualGraph() {
       const groupName = typeof g.name === "string" ? g.name.trim() : "";
       const mod = groupName ? moduleByName.get(groupName) : undefined;
       if (mod) {
-        const mergedRules = (() => {
-          return getEffectiveModuleRules(
-            mod,
-            moduleRuleOverrides,
-            moduleRuleExclusions,
-          ).map((r) => ({
+        const moduleTarget = resolveModuleName(mod);
+        const mergedRules = [
+          ...(mod.rules ?? [])
+            .filter((r) => {
+              const edit = builtinRuleEdits?.[getModuleRuleOrderKey(mod.id, r.id)];
+              return edit?.enabled !== false && (edit?.target || moduleTarget) === moduleTarget;
+            })
+            .map((r) => ({
             id: r.id,
             name: r.name,
             behavior: r.behavior,
-          }));
-        })();
+          })),
+          ...customRuleSets
+            .filter((ruleSet) => ruleSet.target === moduleTarget)
+            .map((ruleSet) => ({
+              id: ruleSet.id,
+              name: ruleSet.name,
+              behavior: ruleSet.behavior,
+            })),
+          ...Object.entries(builtinRuleEdits || {}).flatMap(([key, edit]) => {
+            if (edit?.enabled === false || edit?.target !== moduleTarget) return [];
+            const match = key.match(/^module:([^:]+):(.+)$/);
+            if (!match) return [];
+            const [, sourceModuleId, ruleId] = match;
+            if (sourceModuleId === mod.id) return [];
+            const sourceModule = PROXY_GROUP_MODULES.find((module) => module.id === sourceModuleId);
+            const sourceRule = sourceModule?.rules?.find((rule) => rule.id === ruleId);
+            if (!sourceRule) return [];
+            return [{ id: sourceRule.id, name: sourceRule.name, behavior: sourceRule.behavior }];
+          }),
+        ];
 
         return {
           id: `module:${mod.id}`,
@@ -211,10 +231,12 @@ export function VisualGraph() {
         groupType: cg?.groupType || g.type,
         strategy: cg?.strategy || g.strategy,
         category: "custom",
-        rules: (cg?.rules || []).map((r) => ({
-          id: r.id,
-          name: r.name,
-          behavior: r.behavior,
+        rules: customRuleSets
+          .filter((ruleSet) => ruleSet.target === groupName)
+          .map((r) => ({
+            id: r.id,
+            name: r.name,
+            behavior: r.behavior,
         })),
       };
     });
@@ -287,8 +309,8 @@ export function VisualGraph() {
     enabledDialerProxyGroups,
     filteredProxyGroups,
     generatedProxyGroups,
-    moduleRuleOverrides,
-    moduleRuleExclusions,
+    customRuleSets,
+    builtinRuleEdits,
     proxyGroupOrder,
     resolveModuleName,
   ]);
@@ -306,11 +328,11 @@ export function VisualGraph() {
   const customRoutingRuleSets = React.useMemo(
     () =>
       collectCustomRoutingRuleSets({
+        customRuleSets,
         customProxyGroups,
-        moduleRuleOverrides,
         proxyGroupNameOverrides,
       }),
-    [customProxyGroups, moduleRuleOverrides, proxyGroupNameOverrides],
+    [customProxyGroups, customRuleSets, proxyGroupNameOverrides],
   );
 
   // 注意：`containerRef` 有 `p-4`，Safari 上用 `clientWidth` 会把 padding 算进去，导致阈值判断偏大；

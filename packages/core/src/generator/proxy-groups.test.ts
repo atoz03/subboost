@@ -27,7 +27,6 @@ function customGroup(id: string, groupType: CustomProxyGroup["groupType"]): Cust
     emoji: "C",
     groupType,
     strategy: groupType === "load-balance" ? "round-robin" : undefined,
-    rules: [{ id: `${id}-rule`, name: `${id} rule`, behavior: "domain", url: `https://rules.example.com/${id}.mrs` }],
   };
 }
 
@@ -108,8 +107,17 @@ describe("proxy group generator", () => {
       testUrl: "https://probe.example.com/204",
       testInterval: 120,
       experimentalCnUseCnRuleSet: true,
-      moduleRuleExclusions: { cn: ["geolocation-cn"] },
+      builtinRuleEdits: { "module:cn:geolocation-cn": { enabled: false } },
       customProxyGroups: [customGroup("custom", "select")],
+      customRuleSets: [
+        {
+          id: "custom-rule",
+          name: "Custom rule",
+          behavior: "domain",
+          path: "https://rules.example.com/custom.mrs",
+          target: "Custom custom",
+        },
+      ],
     });
 
     expect(providers["cn-ip"]).toMatchObject({

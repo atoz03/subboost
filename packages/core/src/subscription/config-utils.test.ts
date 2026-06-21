@@ -157,7 +157,12 @@ describe("subscription config utils", () => {
     expect(options.customProxyGroups?.[0]).toMatchObject({
       id: "media",
       strategy: "consistent-hashing",
-      rules: [{ id: "youtube", name: "YouTube" }],
+    });
+    expect(options.customRuleSets?.[0]).toMatchObject({
+      id: "youtube",
+      name: "YouTube",
+      target: "Media",
+      path: "https://rules.example.com/youtube.mrs",
     });
     expect(options.dialerProxyGroups?.[0]).toMatchObject({
       id: "chain",

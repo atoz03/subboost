@@ -88,7 +88,6 @@ describe("validateSubBoostTemplateConfig custom and filtered groups", () => {
             name: "Custom",
             emoji: "C",
             groupType: "select",
-            rules: [],
           },
         ],
       },
@@ -102,7 +101,6 @@ describe("validateSubBoostTemplateConfig custom and filtered groups", () => {
             name: "",
             emoji: "C",
             groupType: "select",
-            rules: [],
           },
         ],
       },
@@ -116,84 +114,11 @@ describe("validateSubBoostTemplateConfig custom and filtered groups", () => {
             name: "Custom",
             emoji: "C",
             groupType: "bad" as never,
-            rules: [],
           },
         ],
       },
       "customProxyGroups.groupType 无效"
     );
-    expectInvalid(
-      {
-        customProxyGroups: [
-          {
-            id: "custom",
-            name: "Custom",
-            emoji: "C",
-            groupType: "select",
-            rules: "bad" as never,
-          },
-        ],
-      },
-      "customProxyGroups.rules 必须是数组"
-    );
-    expectInvalid(
-      {
-        customProxyGroups: [
-          {
-            id: "custom",
-            name: "Custom",
-            emoji: "C",
-            groupType: "select",
-            rules: [1 as never],
-          },
-        ],
-      },
-      "customProxyGroups.rules 只能包含对象"
-    );
-    expectInvalid(
-      {
-        customProxyGroups: [
-          {
-            id: "custom",
-            name: "Custom",
-            emoji: "C",
-            groupType: "select",
-            rules: [
-              {
-                id: "r",
-                name: "R",
-                behavior: "bad" as never,
-                url: "https://rules.example.com/custom.mrs",
-              },
-            ],
-          },
-        ],
-      },
-      "customProxyGroups.rules.behavior 无效"
-    );
-    expectInvalid(
-      {
-        customProxyGroups: [
-          {
-            id: "custom",
-            name: "Custom",
-            emoji: "C",
-            groupType: "select",
-            rules: [
-              {
-                id: "r",
-                name: "R",
-                behavior: "domain",
-                url: "https://rules.example.com/custom.mrs",
-                noResolve: "yes" as never,
-              },
-            ],
-          },
-        ],
-      },
-      "customProxyGroups.rules.noResolve 必须是布尔值"
-    );
-
     expectInvalid({ filteredProxyGroups: "bad" as never }, "filteredProxyGroups 必须是数组");
     expectInvalid({ filteredProxyGroups: [1 as never] }, "filteredProxyGroups 只能包含对象");
     expectInvalid(
@@ -272,35 +197,11 @@ describe("validateSubBoostTemplateConfig custom and filtered groups", () => {
               emoji: "C",
               groupType: "load-balance",
               strategy: "bad" as never,
-              rules: [],
             },
           ],
         })
       )
     ).toEqual({ ok: false, error: "customProxyGroups.strategy 无效" });
-
-    expect(
-      validateSubBoostTemplateConfig(
-        validConfig({
-          customProxyGroups: [
-            {
-              id: "custom",
-              name: "Custom",
-              emoji: "C",
-              groupType: "select",
-              rules: [
-                {
-                  id: "r",
-                  name: "R",
-                  behavior: "domain",
-                  url: "not-url",
-                },
-              ],
-            },
-          ],
-        })
-      )
-    ).toEqual({ ok: false, error: "customProxyGroups.rules.url 必须是 http(s) URL" });
 
     expect(
       validateSubBoostTemplateConfig(

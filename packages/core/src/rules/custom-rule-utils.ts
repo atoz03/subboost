@@ -1,4 +1,4 @@
-import type { CustomProxyGroup, CustomRule } from "@subboost/core/types/config";
+import type { CustomRule, CustomRuleSet } from "@subboost/core/types/config";
 
 export const CUSTOM_RULE_TYPES = [
   "DOMAIN",
@@ -77,19 +77,19 @@ export function getCustomGroupRuleOrderKey(groupId: string, ruleId: string): str
   return `custom-group:${groupId}:${ruleId}`;
 }
 
-export function listEditableRuleOrderKeys(customRules: CustomRule[], customProxyGroups: CustomProxyGroup[] = []): string[] {
+export function getCustomRuleSetOrderKey(ruleSetId: string): string {
+  return `custom-rule-set:${ruleSetId}`;
+}
+
+export function listEditableRuleOrderKeys(customRules: CustomRule[], customRuleSets: CustomRuleSet[] = []): string[] {
   const keys: string[] = [];
   for (const rule of ensureCustomRulesHaveIds(customRules)) {
     keys.push(getCustomRuleOrderKey(rule.id));
   }
-  for (const group of customProxyGroups) {
-    const groupId = toTrimmedString(group?.id);
-    if (!groupId || !Array.isArray(group?.rules)) continue;
-    for (const rule of group.rules) {
-      const ruleId = toTrimmedString(rule?.id);
-      if (!ruleId) continue;
-      keys.push(getCustomGroupRuleOrderKey(groupId, ruleId));
-    }
+  for (const ruleSet of customRuleSets) {
+    const ruleSetId = toTrimmedString(ruleSet?.id);
+    if (!ruleSetId) continue;
+    keys.push(getCustomRuleSetOrderKey(ruleSetId));
   }
   return keys;
 }
@@ -97,9 +97,9 @@ export function listEditableRuleOrderKeys(customRules: CustomRule[], customProxy
 export function reconcileRuleOrder(
   ruleOrder: string[] | undefined,
   customRules: CustomRule[],
-  customProxyGroups: CustomProxyGroup[] = []
+  customRuleSets: CustomRuleSet[] = []
 ): string[] {
-  const available = listEditableRuleOrderKeys(customRules, customProxyGroups);
+  const available = listEditableRuleOrderKeys(customRules, customRuleSets);
   if (available.length === 0) return [];
 
   const availableSet = new Set(available);

@@ -15,26 +15,25 @@ import {
 import { toast } from "@subboost/ui/components/ui/toaster";
 import { cn } from "@subboost/ui/lib/utils";
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-groups";
-import { getEffectiveModuleRules } from "@subboost/core/generator/module-rules";
+import { getModuleRuleOrderKey } from "@subboost/core/generator/module-rules";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
+import { normalizeRuleSetPathInput } from "@subboost/core/rules/rule-model";
 import { RULE_CATEGORIES, type RuleSetInfo } from "@subboost/core/rules/metadata";
 import { useConfigStore } from "@subboost/ui/store/config-store";
 import { useProductInteractionAdapter } from "@subboost/ui/product/interactions";
 import { ProxyGroupsAddedRuleSets } from "./proxy-groups-added-rule-sets";
-import { getRuleDisplayName, replaceRuleProviderBase, useRulesLibrarySearch } from "./proxy-groups-rules-search";
+import { getRuleDisplayName, useRulesLibrarySearch } from "./proxy-groups-rules-search";
 
 export function ProxyGroupsRulesLibrary() {
   const {
-    ruleProviderBaseUrl,
     enabledProxyGroups,
     hiddenProxyGroups,
     toggleProxyGroup,
-    moduleRuleOverrides,
-    moduleRuleExclusions,
+    customRuleSets = [],
+    builtinRuleEdits = {},
     addModuleRules,
-    customProxyGroups,
-    updateCustomProxyGroup,
-    proxyGroupNameOverrides,
+    customProxyGroups = [],
+    proxyGroupNameOverrides = {},
   } = useConfigStore();
   const interactions = useProductInteractionAdapter();
 
@@ -115,16 +114,20 @@ export function ProxyGroupsRulesLibrary() {
           <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-0.5 bg-white/5 rounded p-1.5 border border-white/10">
             {searchResults.map((rule) => {
               const categoryInfo = RULE_CATEGORIES[rule.category];
-              const belongsToModule = visibleProxyGroupModules.find((m) => {
-                return getEffectiveModuleRules(
-                  m,
-                  moduleRuleOverrides,
-                  moduleRuleExclusions,
-                ).some((r) => r.id === rule.id);
-              });
-              const belongsToCustom = customProxyGroups.find((g) =>
-                g.rules.some((r) => r.id === rule.id),
+              const builtinSourceModule = visibleProxyGroupModules.find((m) =>
+                (m.rules ?? []).some((r) => r.id === rule.id && builtinRuleEdits?.[getModuleRuleOrderKey(m.id, r.id)]?.enabled !== false),
               );
+              const builtinTargetName = builtinSourceModule
+                ? builtinRuleEdits?.[getModuleRuleOrderKey(builtinSourceModule.id, rule.id)]?.target ||
+                  resolveModuleFullName(builtinSourceModule)
+                : "";
+              const belongsToModule = builtinTargetName
+                ? visibleProxyGroupModules.find((m) => resolveModuleFullName(m) === builtinTargetName)
+                : null;
+              const customRuleSet = customRuleSets.find((item) => item.id === rule.id);
+              const belongsToCustom = customRuleSet
+                ? customProxyGroups.find((g) => g.name === customRuleSet.target)
+                : null;
               const isModuleEnabled = belongsToModule
                 ? enabledProxyGroups.includes(belongsToModule.id)
                 : false;
@@ -425,19 +428,16 @@ export function ProxyGroupsRulesLibrary() {
                   const usedRuleIds = new Map<string, string>();
                   for (const m of visibleProxyGroupModules) {
                     const groupName = resolveModuleFullName(m);
-                    for (const r of getEffectiveModuleRules(
-                      m,
-                      moduleRuleOverrides,
-                      moduleRuleExclusions,
-                    )) {
-                      if (!usedRuleIds.has(r.id))
-                        usedRuleIds.set(r.id, groupName);
+                    for (const r of m.rules ?? []) {
+                      const edit = builtinRuleEdits?.[getModuleRuleOrderKey(m.id, r.id)];
+                      if (edit?.enabled === false) continue;
+                      if (!usedRuleIds.has(r.id)) {
+                        usedRuleIds.set(r.id, edit?.target || groupName);
+                      }
                     }
                   }
-                  for (const g of customProxyGroups) {
-                    for (const r of g.rules) {
-                      if (!usedRuleIds.has(r.id)) usedRuleIds.set(r.id, g.name);
-                    }
+                  for (const ruleSet of customRuleSets) {
+                    if (!usedRuleIds.has(ruleSet.id)) usedRuleIds.set(ruleSet.id, ruleSet.target);
                   }
 
                   const targetDisplayName =
@@ -483,25 +483,24 @@ export function ProxyGroupsRulesLibrary() {
                       (g) => g.id === target.id,
                     );
                     if (!cg) return;
-                    const existing = new Set(cg.rules.map((r) => r.id));
+                    const existing = new Set(customRuleSets.map((r) => r.id));
                     const rulesToAdd = selectedRules
                       .filter((r) => !existing.has(r.id))
-                      .map((rule) => ({
+                      .flatMap((rule) => {
+                        const path = normalizeRuleSetPathInput(rule.url);
+                        if (!path) return [];
+                        return [{
                         id: rule.id,
                         name: rule.nameZh,
                         behavior: rule.behavior,
-                        url: replaceRuleProviderBase(
-                          rule.url,
-                          ruleProviderBaseUrl,
-                        ),
+                        path,
                         noResolve: rule.behavior === "ipcidr",
-                      }));
+                        }];
+                      });
                     skippedExistingCount =
                       selectedRules.length - rulesToAdd.length;
                     if (rulesToAdd.length > 0) {
-                      updateCustomProxyGroup(cg.id, {
-                        rules: [...cg.rules, ...rulesToAdd],
-                      });
+                      addModuleRules(cg.id, rulesToAdd);
                       addedCount = rulesToAdd.length;
                     }
                   } else {
@@ -509,11 +508,14 @@ export function ProxyGroupsRulesLibrary() {
                     if (!mod) return;
 
                     const existing = new Set<string>(
-                      getEffectiveModuleRules(
-                        mod,
-                        moduleRuleOverrides,
-                        moduleRuleExclusions,
-                      ).map((r) => r.id),
+                      [
+                        ...(mod.rules ?? [])
+                          .filter((r) => builtinRuleEdits?.[getModuleRuleOrderKey(mod.id, r.id)]?.enabled !== false)
+                          .map((r) => r.id),
+                        ...customRuleSets
+                          .filter((r) => r.target === resolveModuleFullName(mod))
+                          .map((r) => r.id),
+                      ],
                     );
                     const candidateRules = selectedRules.filter(
                       (r) => !existing.has(r.id),

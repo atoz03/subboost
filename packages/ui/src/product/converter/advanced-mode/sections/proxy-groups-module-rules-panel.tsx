@@ -13,7 +13,7 @@ import {
   getEffectiveModuleRuleItems,
   getExcludedModuleRuleIds,
   isModuleRuleMovedFrom,
-  type ModuleRuleExclusions,
+  type ModuleRuleExclusions as HiddenPresetRuleIds,
 } from "@subboost/core/generator/module-rules";
 import { EXPERIMENTAL_CN_RULE } from "@subboost/core/generator/rules";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
@@ -37,6 +37,9 @@ type MoveTarget = { kind: "module" | "custom"; id: string };
 type ActiveRuleRow = EffectiveModuleRule & { state: "active" };
 type InactiveRuleRow = ProxyGroupRule & { source: "preset"; state: "removed" | "moved" };
 type RuleRow = ActiveRuleRow | InactiveRuleRow;
+type CustomProxyGroupRuleView = CustomProxyGroup & {
+  rules?: Array<{ id?: unknown }>;
+};
 type CnCandidateRule = {
   id: string;
   name: string;
@@ -77,8 +80,8 @@ export function ProxyGroupsModuleRulesPanel({
   module,
   enabledProxyGroups,
   hiddenProxyGroups,
-  moduleRuleOverrides,
-  moduleRuleExclusions,
+  ruleSetsByTarget,
+  hiddenPresetRuleIds,
   customProxyGroups,
   manualRules,
   manualRuleTargets,
@@ -93,6 +96,7 @@ export function ProxyGroupsModuleRulesPanel({
   onMoveManualRule,
   onRemoveManualRule,
   onRestoreRule,
+  onResetRuleTarget,
   cnIpNoResolve,
   onChangeCnIpNoResolve,
   experimentalCnUseCnRuleSet,
@@ -101,9 +105,9 @@ export function ProxyGroupsModuleRulesPanel({
   module: ProxyGroupModule;
   enabledProxyGroups: string[];
   hiddenProxyGroups: string[];
-  moduleRuleOverrides: Record<string, ModuleRuleOverride[]>;
-  moduleRuleExclusions: ModuleRuleExclusions;
-  customProxyGroups: CustomProxyGroup[];
+  ruleSetsByTarget: Record<string, ModuleRuleOverride[]>;
+  hiddenPresetRuleIds: HiddenPresetRuleIds;
+  customProxyGroups: CustomProxyGroupRuleView[];
   manualRules: CustomRuleListItem[];
   manualRuleTargets: ProxyGroupRuleTarget[];
   proxyGroupNameOverrides: Record<string, string>;
@@ -117,6 +121,7 @@ export function ProxyGroupsModuleRulesPanel({
   onMoveManualRule: (ruleId: string, targetName: string) => void;
   onRemoveManualRule: (index: number) => void;
   onRestoreRule: (ruleId: string) => void;
+  onResetRuleTarget: (ruleId: string) => void;
   cnIpNoResolve: boolean;
   onChangeCnIpNoResolve: (value: boolean) => void;
   experimentalCnUseCnRuleSet: boolean;
@@ -127,9 +132,9 @@ export function ProxyGroupsModuleRulesPanel({
     () => enabledProxyGroups.map((id) => id.trim()).filter(Boolean).join(","),
     [enabledProxyGroups]
   );
-  const moduleRuleExclusionsKey = React.useMemo(
+  const hiddenPresetRuleIdsKey = React.useMemo(
     () =>
-      Object.entries(moduleRuleExclusions || {})
+      Object.entries(hiddenPresetRuleIds || {})
         .flatMap(([moduleId, ruleIds]) =>
           Array.isArray(ruleIds)
             ? ruleIds.map((ruleId) => `${moduleId.trim()}:${String(ruleId).trim()}`)
@@ -139,27 +144,27 @@ export function ProxyGroupsModuleRulesPanel({
         .filter((key) => key && !key.endsWith(":"))
         .sort((a, b) => a.localeCompare(b))
         .join(","),
-    [moduleRuleExclusions]
+    [hiddenPresetRuleIds]
   );
   const [cnCandidateRules, setCnCandidateRules] = React.useState<CnCandidateRule[]>([]);
 
   const activeRules = React.useMemo(
-    () => getEffectiveModuleRuleItems(module, moduleRuleOverrides, moduleRuleExclusions),
-    [module, moduleRuleExclusions, moduleRuleOverrides]
+    () => getEffectiveModuleRuleItems(module, ruleSetsByTarget, hiddenPresetRuleIds),
+    [module, hiddenPresetRuleIds, ruleSetsByTarget]
   );
 
   const inactiveRules = React.useMemo<InactiveRuleRow[]>(() => {
-    const excluded = getExcludedModuleRuleIds(module.id, moduleRuleExclusions);
+    const excluded = getExcludedModuleRuleIds(module.id, hiddenPresetRuleIds);
     return module.rules
       .filter((rule) => rule?.id && excluded.has(rule.id))
       .map((rule) => ({
         ...rule,
         source: "preset" as const,
-        state: isModuleRuleMovedFrom(module.id, rule.id, moduleRuleOverrides, customProxyGroups)
+        state: isModuleRuleMovedFrom(module.id, rule.id, ruleSetsByTarget, customProxyGroups)
           ? "moved" as const
           : "removed" as const,
       }));
-  }, [customProxyGroups, module, moduleRuleExclusions, moduleRuleOverrides]);
+  }, [customProxyGroups, module, hiddenPresetRuleIds, ruleSetsByTarget]);
 
   const rules = React.useMemo<RuleRow[]>(
     () => [
@@ -207,7 +212,7 @@ export function ProxyGroupsModuleRulesPanel({
     const controller = new AbortController();
     const params = new URLSearchParams();
     if (enabledProxyGroupsKey) params.set("modules", enabledProxyGroupsKey);
-    if (moduleRuleExclusionsKey) params.set("excluded", moduleRuleExclusionsKey);
+    if (hiddenPresetRuleIdsKey) params.set("excluded", hiddenPresetRuleIdsKey);
 
     if (!rulesApi?.loadCnCandidateRules) {
       setCnCandidateRules([]);
@@ -228,7 +233,7 @@ export function ProxyGroupsModuleRulesPanel({
       });
 
     return () => controller.abort();
-  }, [enabledProxyGroupsKey, module.id, moduleRuleExclusionsKey, rulesApi]);
+  }, [enabledProxyGroupsKey, module.id, hiddenPresetRuleIdsKey, rulesApi]);
 
   const ensurePresetEditWarning = React.useCallback(async () => {
     if (moduleRuleEditWarningAccepted) return true;
@@ -310,9 +315,13 @@ export function ProxyGroupsModuleRulesPanel({
                           ? "text-orange-300/70 hover:text-orange-200"
                           : "text-red-300/70 hover:text-red-200",
                       )}
-                      title="恢复规则集"
-                      aria-label={`恢复 ${rule.name} 规则集`}
-                      onClick={() => onRestoreRule(rule.id)}
+                      title={rule.state === "moved" ? "恢复默认目标" : "恢复规则集"}
+                      aria-label={`${rule.state === "moved" ? "恢复默认目标" : "恢复"} ${rule.name} 规则集`}
+                      onClick={() =>
+                        rule.state === "moved"
+                          ? onResetRuleTarget(rule.id)
+                          : onRestoreRule(rule.id)
+                      }
                     >
                       <RotateCcw className="h-3.5 w-3.5" />
                     </Button>

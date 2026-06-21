@@ -31,9 +31,11 @@ export {
 export type {
   ConfigActions,
   ConfigState,
+  BuiltinRuleEdits,
+  CustomRuleSet,
   DialerProxyGroup,
-  ModuleRuleExclusions,
   ModuleRuleOverride,
+  RuleSetDraft,
   SourceType,
   SubBoostTemplateConfig,
   SubscriptionSource,

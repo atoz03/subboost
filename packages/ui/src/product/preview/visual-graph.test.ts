@@ -71,14 +71,22 @@ vi.mock("@subboost/ui/store/config-store", () => ({
   useConfigStore: (selector?: any) => (typeof selector === "function" ? selector(mocks.store) : mocks.store),
 }));
 vi.mock("@subboost/core/generator/proxy-groups", () => ({
-  PROXY_GROUP_MODULES: [
-    { id: "select", name: "🚀 节点选择", emoji: "🚀", groupType: "select", category: "core" },
-    { id: "auto", name: "⚡ 自动选择", emoji: "⚡", groupType: "url-test", category: "service" },
-    { id: "ad", name: "🛑 广告拦截", emoji: "🛑", groupType: "select", category: "other" },
-  ],
+	  PROXY_GROUP_MODULES: [
+	    { id: "select", name: "🚀 节点选择", emoji: "🚀", groupType: "select", category: "core" },
+	    {
+	      id: "auto",
+	      name: "⚡ 自动选择",
+	      emoji: "⚡",
+	      groupType: "url-test",
+	      category: "service",
+	      rules: [{ id: "r1", name: "Rule One", behavior: "domain" }],
+	    },
+	    { id: "ad", name: "🛑 广告拦截", emoji: "🛑", groupType: "select", category: "other" },
+	  ],
   generateProxyGroups: vi.fn(() => mocks.generatedProxyGroups),
 }));
 vi.mock("@subboost/core/generator/module-rules", () => ({
+  getModuleRuleOrderKey: (moduleId: string, ruleId: string) => `module:${moduleId}:${ruleId}`,
   getEffectiveModuleRules: vi.fn(() => mocks.effectiveRules),
 }));
 vi.mock("@subboost/core/proxy-group-name", () => ({
@@ -147,10 +155,10 @@ describe("VisualGraph", () => {
       enabledProxyGroups: ["select", "auto"],
       dialerProxyGroups: [{ id: "d1", name: "Relay", enabled: true, relayNodes: ["Relay"], targetNodes: ["Beta"], type: "select" }],
       customRules: [{ id: "manual" }],
-      customProxyGroups: [{ id: "custom-1", name: "🧩 Custom", emoji: "🧩", groupType: "load-balance", strategy: "round-robin", rules: [{ id: "cr", name: "Custom Rule", behavior: "ipcidr" }] }],
+      customProxyGroups: [{ id: "custom-1", name: "🧩 Custom", emoji: "🧩", groupType: "load-balance", strategy: "round-robin" }],
+      customRuleSets: [],
       filteredProxyGroups: [{ id: "filtered-1", name: "🧩 Filtered", emoji: "", enabled: true }],
-      moduleRuleOverrides: {},
-      moduleRuleExclusions: {},
+      builtinRuleEdits: {},
       proxyGroupNameOverrides: {},
       proxyGroupOrder: ["dialer:d1", "module:auto", "missing", "module:select", "dialer:d1"],
       testUrl: "https://example.com",

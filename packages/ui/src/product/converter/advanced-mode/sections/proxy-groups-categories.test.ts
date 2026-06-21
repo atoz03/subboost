@@ -183,8 +183,8 @@ describe("ProxyGroupsCategories", () => {
       toggleProxyGroup: vi.fn(),
       hideProxyGroup: vi.fn(),
       restoreHiddenProxyGroup: vi.fn(),
-      moduleRuleOverrides: { auto: [{ id: "extra-1" }] },
-      moduleRuleExclusions: {},
+      customRuleSets: [{ id: "extra-1", name: "Extra", behavior: "domain", path: "geosite/extra-1.mrs", target: "Auto Override" }],
+      builtinRuleEdits: {},
       moduleRuleEditWarningAccepted: false,
       customRules: [{ id: "manual-1", target: "Auto Override" }],
       updateCustomRule: vi.fn(),
@@ -198,7 +198,7 @@ describe("ProxyGroupsCategories", () => {
       proxyGroupNameOverrides: { auto: "Auto Override" },
       setProxyGroupNameOverride: vi.fn(),
       clearProxyGroupNameOverride: vi.fn(),
-      customProxyGroups: [{ id: "custom-1", name: "Custom", rules: [] }],
+      customProxyGroups: [{ id: "custom-1", name: "Custom" }],
       filteredProxyGroups: [{ name: "Filtered", enabled: true }],
       dialerProxyGroups: [{ name: "Dialer" }],
     };
@@ -297,25 +297,15 @@ describe("ProxyGroupsCategories", () => {
 
     const customRule = { id: "geo", name: "Geo", behavior: "domain", path: "geo.txt", noResolve: true };
     mocks.captures.moduleCards[0].onAddRuleToCustomGroup("custom-1", customRule);
-    expect(mocks.store.updateCustomProxyGroup).toHaveBeenCalledWith("custom-1", {
-      rules: [
-        {
-          id: "geo",
-          name: "Geo",
-          behavior: "domain",
-          url: "https://rules.example/base/geo.txt",
-          noResolve: true,
-        },
-      ],
-    });
+    expect(mocks.store.addModuleRules).toHaveBeenCalledWith("custom-1", [customRule]);
 
-    mocks.store.customProxyGroups = [{ id: "custom-1", name: "Custom", rules: [{ id: "geo" }] }];
-    mocks.store.updateCustomProxyGroup.mockClear();
+    mocks.store.customRuleSets = [{ id: "geo", name: "Geo", behavior: "domain", path: "geo.txt", target: "Custom" }];
+    mocks.store.addModuleRules.mockClear();
     renderCategories();
     mocks.captures.moduleCards[0].onAddRuleToCustomGroup("custom-1", customRule);
-    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.addModuleRules).toHaveBeenCalledWith("custom-1", [customRule]);
 
-    mocks.store.customProxyGroups = [{ id: "custom-1", name: "Custom", rules: [] }];
+    mocks.store.customProxyGroups = [{ id: "custom-1", name: "Custom" }];
     renderCategories();
     mocks.captures.moduleCards[0].onAddRuleToCustomGroup("missing", customRule);
     expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
@@ -327,16 +317,15 @@ describe("ProxyGroupsCategories", () => {
       path: "/geo-off.txt",
       noResolve: false,
     });
-    expect(mocks.store.updateCustomProxyGroup).toHaveBeenCalledWith("custom-1", {
-      rules: [
-        {
-          id: "geo-no-resolve-off",
-          name: "Geo Off",
-          behavior: "domain",
-          url: "https://rules.example/base//geo-off.txt",
-        },
-      ],
-    });
+    expect(mocks.store.addModuleRules).toHaveBeenCalledWith("custom-1", [
+      {
+        id: "geo-no-resolve-off",
+        name: "Geo Off",
+        behavior: "domain",
+        path: "/geo-off.txt",
+        noResolve: false,
+      },
+    ]);
   });
 
   it("renders custom category and disabled non-core module branches", async () => {

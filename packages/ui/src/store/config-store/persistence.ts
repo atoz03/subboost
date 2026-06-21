@@ -7,7 +7,7 @@ export {
   getConfigDraftStorageNameForUser,
 } from "./draft-storage";
 
-export const CONFIG_DRAFT_STORAGE_VERSION = 9;
+export const CONFIG_DRAFT_STORAGE_VERSION = 10;
 
 type ConfigDraftStorage = Pick<Storage, "getItem" | "setItem">;
 

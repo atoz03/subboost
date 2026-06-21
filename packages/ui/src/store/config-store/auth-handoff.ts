@@ -1,6 +1,7 @@
 import type { ConfigState, SourceType, SubscriptionSource } from "./definitions";
 import { initialState } from "./definitions";
 import { safeParseJsonObject } from "@subboost/core/json";
+import { normalizeRuleModelFromConfig } from "@subboost/core/rules/rule-model";
 
 export const AUTH_CONFIG_HANDOFF_STORAGE_NAME = "subboost-auth-config-handoff";
 
@@ -110,15 +111,14 @@ function hasMeaningfulConfig(state: ConfigState): boolean {
     state.deletedNodeNames.length > 0 ||
     state.deletedNodes.length > 0 ||
     state.customRules.length > 0 ||
+    state.customRuleSets.length > 0 ||
     state.customProxyGroups.length > 0 ||
     state.filteredProxyGroups.length > 0 ||
-    hasRecordEntries(state.moduleRuleOverrides) ||
-    hasRecordEntries(state.moduleRuleExclusions as Record<string, unknown>) ||
+    hasRecordEntries(state.builtinRuleEdits as Record<string, unknown>) ||
     state.dialerProxyGroups.length > 0 ||
     hasRecordEntries(state.proxyGroupNameOverrides) ||
     state.proxyGroupOrder.length > 0 ||
     state.ruleOrder.length > 0 ||
-    state.allRulesOrderEditingEnabled !== initialState.allRulesOrderEditingEnabled ||
     state.moduleRuleEditWarningAccepted !== initialState.moduleRuleEditWarningAccepted ||
     state.appliedTemplateId !== initialState.appliedTemplateId ||
     state.template !== initialState.template ||
@@ -147,14 +147,13 @@ function buildHandoffState(state: ConfigState): Partial<ConfigState> {
     hiddenProxyGroups: state.hiddenProxyGroups,
     customProxyGroups: state.customProxyGroups,
     filteredProxyGroups: state.filteredProxyGroups,
-    moduleRuleOverrides: state.moduleRuleOverrides,
-    moduleRuleExclusions: state.moduleRuleExclusions,
+    customRuleSets: state.customRuleSets,
+    builtinRuleEdits: state.builtinRuleEdits,
     customRules: state.customRules,
     dialerProxyGroups: state.dialerProxyGroups,
     proxyGroupNameOverrides: state.proxyGroupNameOverrides,
     proxyGroupOrder: state.proxyGroupOrder,
     ruleOrder: state.ruleOrder,
-    allRulesOrderEditingEnabled: state.allRulesOrderEditingEnabled,
     moduleRuleEditWarningAccepted: state.moduleRuleEditWarningAccepted,
     appliedTemplateId: state.appliedTemplateId,
     dnsYaml: state.dnsYaml,
@@ -186,12 +185,21 @@ function normalizeHandoffState(raw: unknown): Partial<ConfigState> | null {
   if (enabledProxyGroups) out.enabledProxyGroups = enabledProxyGroups;
   const hiddenProxyGroups = stringArray(raw.hiddenProxyGroups);
   if (hiddenProxyGroups) out.hiddenProxyGroups = hiddenProxyGroups;
+  const ruleModel = normalizeRuleModelFromConfig(raw);
   const customProxyGroups = objectArray<ConfigState["customProxyGroups"][number]>(raw.customProxyGroups);
-  if (customProxyGroups) out.customProxyGroups = customProxyGroups;
+  if (customProxyGroups || ruleModel.customProxyGroups.length > 0) out.customProxyGroups = ruleModel.customProxyGroups;
   const filteredProxyGroups = objectArray<ConfigState["filteredProxyGroups"][number]>(raw.filteredProxyGroups);
   if (filteredProxyGroups) out.filteredProxyGroups = filteredProxyGroups;
-  if (isRecord(raw.moduleRuleOverrides)) out.moduleRuleOverrides = raw.moduleRuleOverrides as ConfigState["moduleRuleOverrides"];
-  if (isRecord(raw.moduleRuleExclusions)) out.moduleRuleExclusions = raw.moduleRuleExclusions as ConfigState["moduleRuleExclusions"];
+  if (
+    Array.isArray(raw.customRuleSets) ||
+    isRecord(raw.moduleRuleOverrides) ||
+    (customProxyGroups || ruleModel.customProxyGroups.length > 0)
+  ) {
+    out.customRuleSets = ruleModel.customRuleSets;
+  }
+  if (isRecord(raw.builtinRuleEdits) || isRecord(raw.moduleRuleExclusions) || isRecord(raw.moduleRuleOverrides)) {
+    out.builtinRuleEdits = ruleModel.builtinRuleEdits;
+  }
   const customRules = objectArray<ConfigState["customRules"][number]>(raw.customRules);
   if (customRules) out.customRules = customRules;
   const dialerProxyGroups = objectArray<ConfigState["dialerProxyGroups"][number]>(raw.dialerProxyGroups);
@@ -201,7 +209,6 @@ function normalizeHandoffState(raw: unknown): Partial<ConfigState> | null {
   if (proxyGroupOrder) out.proxyGroupOrder = proxyGroupOrder;
   const ruleOrder = stringArray(raw.ruleOrder);
   if (ruleOrder) out.ruleOrder = ruleOrder;
-  if (typeof raw.allRulesOrderEditingEnabled === "boolean") out.allRulesOrderEditingEnabled = raw.allRulesOrderEditingEnabled;
   if (typeof raw.moduleRuleEditWarningAccepted === "boolean") out.moduleRuleEditWarningAccepted = raw.moduleRuleEditWarningAccepted;
   if (typeof raw.appliedTemplateId === "string" || raw.appliedTemplateId === null) {
     out.appliedTemplateId = raw.appliedTemplateId;

@@ -6,7 +6,7 @@ import {
 } from "@subboost/core/templates/config-template";
 import type { SubBoostTemplateConfig } from "@subboost/core/types/template-config";
 
-export function validConfig(patch: Partial<SubBoostTemplateConfig> = {}): SubBoostTemplateConfig {
+export function validConfig(patch: Partial<SubBoostTemplateConfig> & Record<string, unknown> = {}): SubBoostTemplateConfig {
   return {
     schema: SUBBOOST_TEMPLATE_CONFIG_SCHEMA,
     template: "minimal",
@@ -14,8 +14,8 @@ export function validConfig(patch: Partial<SubBoostTemplateConfig> = {}): SubBoo
     hiddenProxyGroups: [],
     customProxyGroups: [],
     filteredProxyGroups: [],
-    moduleRuleOverrides: {},
-    moduleRuleExclusions: {},
+    customRuleSets: [],
+    builtinRuleEdits: {},
     customRules: [],
     ruleOrder: [],
     dialerProxyGroups: [],
@@ -29,9 +29,9 @@ export function validConfig(patch: Partial<SubBoostTemplateConfig> = {}): SubBoo
     cnIpNoResolve: true,
     experimentalCnUseCnRuleSet: true,
     ...patch,
-  };
+  } as SubBoostTemplateConfig;
 }
 
-export function expectInvalid(patch: Partial<SubBoostTemplateConfig>, error: string) {
+export function expectInvalid(patch: Partial<SubBoostTemplateConfig> & Record<string, unknown>, error: string) {
   expect(validateSubBoostTemplateConfig(validConfig(patch))).toEqual({ ok: false, error });
 }

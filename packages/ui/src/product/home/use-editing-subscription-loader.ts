@@ -4,9 +4,9 @@ import * as React from "react";
 import type { SubscriptionSource } from "@subboost/ui/store/config-store";
 import type { ParsedNode } from "@subboost/core/types/node";
 import type { EditingSubscriptionLoaderOptions } from "./editing-subscription-types";
-import { hasFullRuleOrderKeys, normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
-import { normalizeModuleRuleExclusions } from "@subboost/core/generator/module-rules";
+import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
 import { ensureCustomRulesHaveIds } from "@subboost/core/rules/custom-rule-utils";
+import { normalizeRuleModelFromConfig } from "@subboost/core/rules/rule-model";
 import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/url-input";
 import {
   hasSubscriptionUserInfo,
@@ -411,18 +411,13 @@ export function useEditingSubscriptionLoader({
           : [];
         const hiddenProxyGroupSetFromCfg = new Set(hiddenProxyGroupsFromCfg);
         const customRulesFromCfg = ensureCustomRulesHaveIds(Array.isArray(cfg.customRules) ? (cfg.customRules as any[]) : []);
-        const customProxyGroupsFromCfg = Array.isArray(cfg.customProxyGroups) ? (cfg.customProxyGroups as any[]) : [];
+        const ruleModelFromCfg = normalizeRuleModelFromConfig(cfg);
+        const customProxyGroupsFromCfg = ruleModelFromCfg.customProxyGroups;
+        const customRuleSetsFromCfg = ruleModelFromCfg.customRuleSets;
+        const builtinRuleEditsFromCfg = ruleModelFromCfg.builtinRuleEdits;
         const filteredProxyGroupsFromCfg = Array.isArray((cfg as any).filteredProxyGroups)
           ? (((cfg as any).filteredProxyGroups as unknown[]) as any[])
           : [];
-        const moduleRuleOverridesFromCfg =
-          cfg.moduleRuleOverrides && typeof cfg.moduleRuleOverrides === "object"
-            ? (cfg.moduleRuleOverrides as Record<string, unknown>)
-            : null;
-        const moduleRuleExclusionsFromCfg =
-          cfg.moduleRuleExclusions && typeof cfg.moduleRuleExclusions === "object"
-            ? normalizeModuleRuleExclusions(cfg.moduleRuleExclusions)
-            : null;
         const dialerProxyGroupsFromCfg = Array.isArray(cfg.dialerProxyGroups) ? (cfg.dialerProxyGroups as any[]) : [];
         const proxyGroupNameOverridesFromCfg =
           cfg.proxyGroupNameOverrides && typeof cfg.proxyGroupNameOverrides === "object"
@@ -442,40 +437,14 @@ export function useEditingSubscriptionLoader({
               return out;
             })()
           : null;
-        const normalizedModuleRuleOverridesFromCfg = (() => {
-          if (!moduleRuleOverridesFromCfg) return null;
-          const out: Record<string, any[]> = {};
-          for (const [moduleId, rules] of Object.entries(moduleRuleOverridesFromCfg)) {
-            if (!Array.isArray(rules)) continue;
-            const normalized = (rules as any[])
-              .map((r) => {
-                if (!r || typeof r !== "object") return null;
-                const id = (r as any).id;
-                const path = (r as any).path;
-                if (typeof id !== "string" || !id.trim()) return null;
-                if (typeof path !== "string" || !path.trim()) return null;
-                return {
-                  id: id.trim(),
-                  name: typeof (r as any).name === "string" && (r as any).name.trim() ? (r as any).name.trim() : id.trim(),
-                  behavior: (r as any).behavior === "ipcidr" ? "ipcidr" : "domain",
-                  path: path.trim(),
-                  ...((r as any).noResolve ? { noResolve: true } : {}),
-                };
-              })
-              .filter(Boolean) as any[];
-            if (normalized.length > 0) out[moduleId] = normalized;
-          }
-          return out;
-        })();
         const nextEnabledModules = (enabledGroupsFromCfg ?? useConfigStore.getState().enabledProxyGroups).filter(
           (moduleId) => !hiddenProxyGroupSetFromCfg.has(moduleId)
         );
         const ruleOrderFromCfg = normalizePersistedRuleOrder({
           enabledModules: nextEnabledModules,
           customRules: customRulesFromCfg,
-          customProxyGroups: customProxyGroupsFromCfg as any,
-          moduleRuleOverrides: normalizedModuleRuleOverridesFromCfg ?? useConfigStore.getState().moduleRuleOverrides,
-          moduleRuleExclusions: moduleRuleExclusionsFromCfg ?? useConfigStore.getState().moduleRuleExclusions,
+          customRuleSets: customRuleSetsFromCfg,
+          builtinRuleEdits: builtinRuleEditsFromCfg,
           proxyGroupNameOverrides: proxyGroupNameOverridesFromCfg
             ? Object.fromEntries(
                 Object.entries(proxyGroupNameOverridesFromCfg)
@@ -493,10 +462,6 @@ export function useEditingSubscriptionLoader({
               : useConfigStore.getState().cnIpNoResolve,
           ruleOrder: Array.isArray((cfg as any).ruleOrder) ? ((cfg as any).ruleOrder as string[]) : [],
         });
-        const allRulesOrderEditingEnabledFromCfg =
-          typeof (cfg as any).allRulesOrderEditingEnabled === "boolean"
-            ? Boolean((cfg as any).allRulesOrderEditingEnabled)
-            : hasFullRuleOrderKeys(ruleOrderFromCfg);
         const listenerPortsFromCfg = (() => {
           const raw = (cfg as any).listenerPorts;
           if (!raw || typeof raw !== "object") return {};
@@ -538,14 +503,13 @@ export function useEditingSubscriptionLoader({
           hiddenProxyGroups: hiddenProxyGroupsFromCfg,
           customRules: customRulesFromCfg as any,
           customProxyGroups: customProxyGroupsFromCfg as any,
+          customRuleSets: customRuleSetsFromCfg,
+          builtinRuleEdits: builtinRuleEditsFromCfg,
           filteredProxyGroups: filteredProxyGroupsFromCfg as any,
-          moduleRuleOverrides: normalizedModuleRuleOverridesFromCfg ?? state.moduleRuleOverrides,
-          moduleRuleExclusions: moduleRuleExclusionsFromCfg ?? state.moduleRuleExclusions,
           moduleRuleEditWarningAccepted:
             typeof (cfg as any).moduleRuleEditWarningAccepted === "boolean"
               ? Boolean((cfg as any).moduleRuleEditWarningAccepted)
               : state.moduleRuleEditWarningAccepted,
-          allRulesOrderEditingEnabled: allRulesOrderEditingEnabledFromCfg,
           dialerProxyGroups: dialerProxyGroupsFromCfg as any,
           proxyGroupNameOverrides: proxyGroupNameOverridesFromCfg
             ? Object.fromEntries(

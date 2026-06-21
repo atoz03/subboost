@@ -5,7 +5,7 @@
 
 import type { ParsedNode } from "@subboost/core/types/node";
 import { DEFAULT_LOAD_BALANCE_STRATEGY } from "@subboost/core/types/config";
-import type { ProxyGroup, RuleProvider, CustomProxyGroup } from "@subboost/core/types/config";
+import type { BuiltinRuleEdits, CustomProxyGroup, CustomRuleSet, ProxyGroup, RuleProvider } from "@subboost/core/types/config";
 import type { FilteredProxyGroup } from "@subboost/core/types/filtered-proxy-group";
 import { getFilteredProxyGroupProxies } from "@subboost/core/filtered-proxy-groups";
 import { isSubscriptionInfoNodeName } from "@subboost/core/subscription/info-node-name";
@@ -14,11 +14,11 @@ import { PROXY_GROUP_MODULES, type ProxyGroupModule, type ProxyGroupRule } from 
 import {
   EXPERIMENTAL_CN_RULE,
   generateRules,
-  getEffectiveModuleRules,
   resolveModuleName,
   resolveModuleNameFromModule,
 } from "./rules";
-import type { ModuleRuleExclusions } from "./module-rules";
+import { getModuleRuleOrderKey } from "./module-rules";
+import { buildRuleSetUrlFromPath } from "@subboost/core/rules/rule-model";
 
 export { PROXY_GROUP_MODULES };
 export type { ProxyGroupModule, ProxyGroupRule };
@@ -47,9 +47,9 @@ export interface GenerateOptions {
   testUrl: string;
   testInterval: number;
   customProxyGroups?: CustomProxyGroup[];
+  customRuleSets?: CustomRuleSet[];
   filteredProxyGroups?: FilteredProxyGroup[];
-  moduleRuleOverrides?: Record<string, ProxyGroupRule[]>;
-  moduleRuleExclusions?: ModuleRuleExclusions;
+  builtinRuleEdits?: BuiltinRuleEdits;
   // 国内服务 GeoIP 规则是否使用 no-resolve（默认 true；关闭可提升命中率但可能造成 DNS 泄露）
   cnIpNoResolve?: boolean;
   // 实验性：为“国内服务”额外启用 cn（geosite/cn.mrs），并将其规则后置（放到 global 之后）
@@ -348,7 +348,12 @@ export function generateProxyGroups(options: GenerateOptions): ProxyGroup[] {
  * 生成规则提供者配置
  */
 export function generateRuleProviders(options: GenerateOptions): Record<string, RuleProvider> {
-  const { enabledModules, ruleProviderBaseUrl, customProxyGroups = [], moduleRuleOverrides, moduleRuleExclusions } = options;
+  const {
+    enabledModules,
+    ruleProviderBaseUrl,
+    customRuleSets = [],
+    builtinRuleEdits,
+  } = options;
   const providers: Record<string, RuleProvider> = {};
   const enabledSet = new Set(enabledModules);
 
@@ -356,8 +361,9 @@ export function generateRuleProviders(options: GenerateOptions): Record<string, 
   for (const proxyModule of PROXY_GROUP_MODULES) {
     if (!enabledSet.has(proxyModule.id)) continue;
 
-    const effectiveRules = getEffectiveModuleRules(proxyModule, moduleRuleOverrides, moduleRuleExclusions);
-    for (const rule of effectiveRules) {
+    for (const rule of proxyModule.rules) {
+      const edit = builtinRuleEdits?.[getModuleRuleOrderKey(proxyModule.id, rule.id)];
+      if (edit?.enabled === false) continue;
       providers[rule.id] = {
         type: "http",
         behavior: rule.behavior,
@@ -380,20 +386,17 @@ export function generateRuleProviders(options: GenerateOptions): Record<string, 
     };
   }
 
-  // 自定义代理组的规则
-  for (const customGroup of customProxyGroups) {
-    for (const rule of customGroup.rules) {
-      if (!providers[rule.id]) {
-        providers[rule.id] = {
-          type: "http",
-          behavior: rule.behavior,
-          url: rule.url,
-          path: `./ruleset/${rule.id}.mrs`,
-          interval: 86400,
-          format: "mrs",
-        };
-      }
-    }
+  // 用户新增规则集统一由 customRuleSets 提供，不再挂在某个分流组对象上。
+  for (const ruleSet of customRuleSets) {
+    if (!ruleSet?.id || !ruleSet.path || providers[ruleSet.id]) continue;
+    providers[ruleSet.id] = {
+      type: "http",
+      behavior: ruleSet.behavior,
+      url: buildRuleSetUrlFromPath(ruleSet.path, ruleProviderBaseUrl),
+      path: `./ruleset/${ruleSet.id}.mrs`,
+      interval: 86400,
+      format: "mrs",
+    };
   }
 
   return providers;

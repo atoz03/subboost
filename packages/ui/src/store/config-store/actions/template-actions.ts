@@ -1,15 +1,10 @@
 import { getBuiltinTemplateId } from "@subboost/core/templates/builtin";
 import { TEMPLATES } from "@subboost/core/templates";
 import { ensureCustomRulesHaveIds } from "@subboost/core/rules/custom-rule-utils";
-import { hasFullRuleOrderKeys, normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
+import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-groups";
-import { normalizeModuleRuleExclusions } from "@subboost/core/generator/module-rules";
-import type {
-  ConfigActions,
-  ModuleRuleExclusions,
-  ModuleRuleOverride,
-  SubBoostTemplateConfig,
-} from "../definitions";
+import { normalizeRuleModelFromConfig } from "@subboost/core/rules/rule-model";
+import type { ConfigActions, SubBoostTemplateConfig } from "../definitions";
 import type { GetState, SetAndGenerateConfig, SetState } from "../store-types";
 
 type TemplateActions = Pick<
@@ -36,6 +31,10 @@ function normalizeHiddenProxyGroups(value: unknown): string[] {
   return out;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export function createTemplateActions(
   set: SetState,
   _get: GetState,
@@ -50,10 +49,9 @@ export function createTemplateActions(
         hiddenProxyGroups: [],
         appliedTemplateId: getBuiltinTemplateId(template),
         customRules: [],
-        moduleRuleOverrides: {},
-        moduleRuleExclusions: {},
+        customRuleSets: [],
+        builtinRuleEdits: {},
         ruleOrder: [],
-        allRulesOrderEditingEnabled: false,
         moduleRuleEditWarningAccepted: false,
       }));
     },
@@ -86,9 +84,28 @@ export function createTemplateActions(
       if (!config || typeof config !== "object") return;
 
       setAndGenerateConfig((state) => {
-        const nextCustomProxyGroups = Array.isArray(config.customProxyGroups)
-          ? config.customProxyGroups
-          : state.customProxyGroups;
+        const ruleModel = normalizeRuleModelFromConfig(config);
+        const hasCustomProxyGroups = Array.isArray(config.customProxyGroups);
+        const hasCustomRuleSets = Array.isArray(config.customRuleSets);
+        const hasLegacyModuleRuleOverrides = isRecord((config as Record<string, unknown>).moduleRuleOverrides);
+        const hasLegacyModuleRuleExclusions = isRecord((config as Record<string, unknown>).moduleRuleExclusions);
+        const hasBuiltinRuleEdits = isRecord(config.builtinRuleEdits);
+        const nextCustomProxyGroups =
+          hasCustomProxyGroups || ruleModel.customProxyGroups.length > 0
+            ? ruleModel.customProxyGroups
+            : state.customProxyGroups;
+        const nextCustomRuleSets =
+          hasCustomRuleSets ||
+          hasLegacyModuleRuleOverrides ||
+          hasCustomProxyGroups
+            ? ruleModel.customRuleSets
+            : state.customRuleSets;
+        const nextBuiltinRuleEdits =
+          hasBuiltinRuleEdits ||
+          hasLegacyModuleRuleExclusions ||
+          hasLegacyModuleRuleOverrides
+            ? ruleModel.builtinRuleEdits
+            : state.builtinRuleEdits;
         const nextCustomRules = Array.isArray(config.customRules)
           ? ensureCustomRulesHaveIds(config.customRules)
           : state.customRules;
@@ -97,28 +114,23 @@ export function createTemplateActions(
         const shouldRefreshRuleOrder =
           Array.isArray(config.ruleOrder) ||
           Array.isArray(config.customRules) ||
-          Array.isArray(config.customProxyGroups) ||
-          Boolean(config.moduleRuleExclusions && typeof config.moduleRuleExclusions === "object");
+          hasCustomProxyGroups ||
+          hasCustomRuleSets ||
+          hasBuiltinRuleEdits ||
+          hasLegacyModuleRuleExclusions ||
+          hasLegacyModuleRuleOverrides;
         const nextEnabledModulesRaw = Array.isArray(config.enabledProxyGroups)
           ? config.enabledProxyGroups
           : state.enabledProxyGroups;
         const nextEnabledModules = nextEnabledModulesRaw.filter(
           (moduleId) => !nextHiddenProxyGroupSet.has(moduleId)
         );
-        const nextModuleRuleExclusions =
-          config.moduleRuleExclusions && typeof config.moduleRuleExclusions === "object"
-            ? normalizeModuleRuleExclusions(config.moduleRuleExclusions)
-            : state.moduleRuleExclusions;
         const nextRuleOrder = shouldRefreshRuleOrder
           ? normalizePersistedRuleOrder({
               enabledModules: nextEnabledModules,
               customRules: nextCustomRules,
-              customProxyGroups: nextCustomProxyGroups,
-              moduleRuleOverrides:
-                config.moduleRuleOverrides && typeof config.moduleRuleOverrides === "object"
-                  ? (config.moduleRuleOverrides as Record<string, ModuleRuleOverride[]>)
-                  : state.moduleRuleOverrides,
-              moduleRuleExclusions: nextModuleRuleExclusions,
+              customRuleSets: nextCustomRuleSets,
+              builtinRuleEdits: nextBuiltinRuleEdits,
               proxyGroupNameOverrides:
                 config.proxyGroupNameOverrides && typeof config.proxyGroupNameOverrides === "object"
                   ? (config.proxyGroupNameOverrides as Record<string, string>)
@@ -142,18 +154,11 @@ export function createTemplateActions(
           filteredProxyGroups: Array.isArray(config.filteredProxyGroups)
             ? config.filteredProxyGroups
             : state.filteredProxyGroups,
-          moduleRuleOverrides:
-            config.moduleRuleOverrides && typeof config.moduleRuleOverrides === "object"
-              ? (config.moduleRuleOverrides as Record<string, ModuleRuleOverride[]>)
-              : state.moduleRuleOverrides,
-          moduleRuleExclusions: nextModuleRuleExclusions as ModuleRuleExclusions,
+          customRuleSets: nextCustomRuleSets,
+          builtinRuleEdits: nextBuiltinRuleEdits,
           moduleRuleEditWarningAccepted: false,
           customRules: nextCustomRules,
           ruleOrder: nextRuleOrder,
-          allRulesOrderEditingEnabled:
-            typeof config.allRulesOrderEditingEnabled === "boolean"
-              ? config.allRulesOrderEditingEnabled
-              : hasFullRuleOrderKeys(nextRuleOrder),
           cnIpNoResolve:
             typeof config.cnIpNoResolve === "boolean" ? config.cnIpNoResolve : state.cnIpNoResolve,
           experimentalCnUseCnRuleSet:

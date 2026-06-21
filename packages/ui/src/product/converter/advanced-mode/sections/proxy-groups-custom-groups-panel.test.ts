@@ -122,7 +122,8 @@ const sourceRule = {
   id: "rule-a",
   name: "Rule A",
   behavior: "domain",
-  url: "https://rules.example/geosite/rule-a.mrs",
+  path: "geosite/rule-a.mrs",
+  target: "🧩 Custom",
   noResolve: true,
 };
 
@@ -131,7 +132,6 @@ const customGroup = {
   name: "🧩 Custom",
   emoji: "🧩",
   groupType: "select",
-  rules: [sourceRule],
 };
 
 const targetGroup = {
@@ -139,7 +139,6 @@ const targetGroup = {
   name: "Target",
   emoji: "🧩",
   groupType: "select",
-  rules: [],
 };
 
 function renderPanel(overrides: Record<number, unknown> = {}) {
@@ -172,11 +171,14 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
       proxyGroupNameOverrides: { auto: "Auto" },
       customRules: [{ id: "manual-1", target: "🧩 Custom" }],
       customProxyGroups: [customGroup, targetGroup],
+      customRuleSets: [sourceRule],
       filteredProxyGroups: [{ name: "Filtered", enabled: true }],
       dialerProxyGroups: [{ name: "Dialer" }],
       addCustomProxyGroup: vi.fn(),
       removeCustomProxyGroup: vi.fn(),
       updateCustomProxyGroup: vi.fn(),
+      moveModuleRule: vi.fn(),
+      removeModuleRule: vi.fn(),
       updateCustomRule: vi.fn(),
       removeCustomRule: vi.fn(),
       toggleProxyGroup: vi.fn(),
@@ -200,7 +202,6 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
       name: "🧩 New",
       emoji: "🧩",
       groupType: "select",
-      rules: [],
     });
     expect(mocks.interactions.proxyGroupAdded).toHaveBeenCalledWith({ groupType: "select" });
     expect(setters[1]).toHaveBeenCalledWith({ emoji: "🧩", name: "" });
@@ -236,25 +237,29 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
     renderPanel({ 0: new Set(["custom-1"]) });
 
     mocks.captures.moveMenus[0].onMove({ kind: "custom", id: "custom-2", name: "Target" });
-    expect(mocks.store.updateCustomProxyGroup).toHaveBeenCalledWith("custom-1", { rules: [] });
-    expect(mocks.store.updateCustomProxyGroup).toHaveBeenCalledWith("custom-2", { rules: [sourceRule] });
+    expect(mocks.store.moveModuleRule).toHaveBeenCalledWith("custom-1", "rule-a", {
+      kind: "custom",
+      id: "custom-2",
+      name: "Target",
+    });
 
-    mocks.store.updateCustomProxyGroup.mockClear();
-    mocks.store.customProxyGroups = [customGroup, { ...targetGroup, rules: [{ id: "rule-a" }] }];
+    mocks.store.moveModuleRule.mockClear();
+    mocks.store.customRuleSets = [sourceRule, { ...sourceRule, target: "Target" }];
     renderPanel({ 0: new Set(["custom-1"]) });
     mocks.captures.moveMenus[0].onMove({ kind: "custom", id: "custom-2", name: "Target" });
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "规则集已存在", variant: "warning" }));
-    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.moveModuleRule).not.toHaveBeenCalled();
 
     mocks.store.customProxyGroups = [customGroup, targetGroup];
+    mocks.store.customRuleSets = [sourceRule];
     mocks.store.enabledProxyGroups = [];
     renderPanel({ 0: new Set(["custom-1"]) });
     mocks.captures.moveMenus[0].onMove({ kind: "module", id: "fallback", name: "Fallback" });
-    expect(mocks.store.toggleProxyGroup).toHaveBeenCalledWith("fallback");
-    expect(mocks.store.addModuleRules).toHaveBeenCalledWith("fallback", [
-      { id: "rule-a", name: "Rule A", behavior: "domain", path: "geosite/rule-a.mrs", noResolve: true },
-    ]);
-    expect(mocks.store.updateCustomProxyGroup).toHaveBeenCalledWith("custom-1", { rules: [] });
+    expect(mocks.store.moveModuleRule).toHaveBeenCalledWith("custom-1", "rule-a", {
+      kind: "module",
+      id: "fallback",
+      name: "Fallback",
+    });
   });
 
   it("updates manual rules, deletes rule rows, and renders empty state", () => {
@@ -266,7 +271,7 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
     expect(mocks.store.removeCustomRule).toHaveBeenCalledWith(0);
 
     mocks.captures.buttons.find((props: any) => props["aria-label"] === "删除 Rule A 规则集").onClick();
-    expect(mocks.store.updateCustomProxyGroup).toHaveBeenCalledWith("custom-1", { rules: [] });
+    expect(mocks.store.removeModuleRule).toHaveBeenCalledWith("custom-1", "rule-a");
 
     mocks.store.customProxyGroups = [];
     renderPanel();
@@ -313,29 +318,34 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
   it("handles custom rule-set move no-op and missing-target paths", () => {
     renderPanel({ 0: new Set(["custom-1"]) });
     mocks.captures.moveMenus[0].onMove({ kind: "custom", id: "custom-1", name: "🧩 Custom" });
-    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.moveModuleRule).not.toHaveBeenCalled();
 
     mocks.store.customProxyGroups = [];
     mocks.captures.moveMenus[0].onMove({ kind: "custom", id: "custom-2", name: "Target" });
-    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
-
-    mocks.store.customProxyGroups = [{ ...customGroup, rules: [] }, targetGroup];
-    mocks.captures.moveMenus[0].onMove({ kind: "custom", id: "custom-2", name: "Target" });
-    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.store.moveModuleRule).not.toHaveBeenCalled();
 
     mocks.store.customProxyGroups = [customGroup, targetGroup];
-    mocks.captures.moveMenus[0].onMove({ kind: "custom", id: "missing", name: "Missing" });
-    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    mocks.store.customRuleSets = [];
+    mocks.captures.moveMenus[0].onMove({ kind: "custom", id: "custom-2", name: "Target" });
+    expect(mocks.store.moveModuleRule).not.toHaveBeenCalled();
 
-    mocks.store.updateCustomProxyGroup.mockClear();
+    mocks.store.customProxyGroups = [customGroup, targetGroup];
+    mocks.store.customRuleSets = [sourceRule];
+    mocks.captures.moveMenus[0].onMove({ kind: "custom", id: "missing", name: "Missing" });
+    expect(mocks.store.moveModuleRule).not.toHaveBeenCalled();
+
+    mocks.store.moveModuleRule.mockClear();
     mocks.store.enabledProxyGroups = ["fallback"];
-    mocks.store.customProxyGroups = [{ ...customGroup, rules: [{ ...sourceRule, noResolve: false }] }, targetGroup];
+    mocks.store.customProxyGroups = [customGroup, targetGroup];
+    mocks.store.customRuleSets = [{ ...sourceRule, noResolve: false }];
     renderPanel({ 0: new Set(["custom-1"]) });
     mocks.captures.moveMenus[0].onMove({ kind: "module", id: "fallback", name: "Fallback" });
     expect(mocks.store.toggleProxyGroup).not.toHaveBeenCalled();
-    expect(mocks.store.addModuleRules).toHaveBeenCalledWith("fallback", [
-      { id: "rule-a", name: "Rule A", behavior: "domain", path: "geosite/rule-a.mrs" },
-    ]);
+    expect(mocks.store.moveModuleRule).toHaveBeenCalledWith("custom-1", "rule-a", {
+      kind: "module",
+      id: "fallback",
+      name: "Fallback",
+    });
   });
 
   it("renders load-balance labels, empty expanded groups, and ignores non-rule-set move values", () => {
@@ -347,12 +357,12 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
       },
       targetGroup,
     ];
+    mocks.store.customRuleSets = [];
     const result = renderPanel({ 0: new Set(["custom-1", "custom-2"]) });
     expect(result.html).toContain("type:load-balance / strategy:consistent-hashing");
     expect(result.html).toContain("还没有规则集");
 
-    mocks.captures.moveMenus[0].onMove("not-a-target");
-    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalledWith("custom-1", { rules: [] });
+    expect(mocks.captures.moveMenus[0]).toBeUndefined();
 
     mocks.store.filteredProxyGroups = [null, { name: "Disabled", enabled: false }, { name: " ", enabled: true }];
     mocks.store.dialerProxyGroups = [null, { name: " " }];
@@ -362,7 +372,6 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
       name: "🧩 Unique",
       emoji: "🧩",
       groupType: "select",
-      rules: [],
     });
   });
 });

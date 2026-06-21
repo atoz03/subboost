@@ -9,7 +9,7 @@ import {
   getEffectiveModuleRuleItems,
   getExcludedModuleRuleIds,
   isModuleRuleMovedFrom,
-  type ModuleRuleExclusions,
+  type ModuleRuleExclusions as HiddenPresetRuleIds,
 } from "@subboost/core/generator/module-rules";
 import type { ProxyGroupModule } from "@subboost/core/generator/proxy-groups";
 import type { CustomProxyGroup, ModuleRuleOverride } from "@subboost/ui/store/config-store";
@@ -25,6 +25,10 @@ import {
   ProxyGroupNameEditor,
 } from "./proxy-group-name-editor";
 import { ProxyGroupSummary } from "./proxy-group-summary";
+
+type CustomProxyGroupRuleView = CustomProxyGroup & {
+  rules?: Array<{ id?: unknown }>;
+};
 
 function ModuleHintPopover({ moduleId }: { moduleId: string }) {
   const isGemini = moduleId === "gemini";
@@ -100,8 +104,8 @@ export function ProxyGroupsModuleCard({
   onCommitEditing,
   onHide,
   extraRules,
-  moduleRuleOverrides,
-  moduleRuleExclusions,
+  ruleSetsByTarget,
+  hiddenPresetRuleIds,
   customProxyGroups,
   manualRules,
   manualRuleTargets,
@@ -120,6 +124,7 @@ export function ProxyGroupsModuleCard({
   onMoveManualRule,
   onRemoveManualRule,
   onRestoreRule,
+  onResetRuleTarget,
   cnIpNoResolve,
   onChangeCnIpNoResolve,
   experimentalCnUseCnRuleSet,
@@ -138,9 +143,9 @@ export function ProxyGroupsModuleCard({
   onCommitEditing: () => void;
   onHide: () => void;
   extraRules: ModuleRuleOverride[];
-  moduleRuleOverrides: Record<string, ModuleRuleOverride[]>;
-  moduleRuleExclusions: ModuleRuleExclusions;
-  customProxyGroups: CustomProxyGroup[];
+  ruleSetsByTarget: Record<string, ModuleRuleOverride[]>;
+  hiddenPresetRuleIds: HiddenPresetRuleIds;
+  customProxyGroups: CustomProxyGroupRuleView[];
   manualRules: CustomRuleListItem[];
   manualRuleTargets: ProxyGroupRuleTarget[];
   enabledProxyGroups: string[];
@@ -158,16 +163,17 @@ export function ProxyGroupsModuleCard({
   onMoveManualRule: (ruleId: string, targetName: string) => void;
   onRemoveManualRule: (index: number) => void;
   onRestoreRule: (ruleId: string) => void;
+  onResetRuleTarget: (ruleId: string) => void;
   cnIpNoResolve: boolean;
   onChangeCnIpNoResolve: (value: boolean) => void;
   experimentalCnUseCnRuleSet: boolean;
   onChangeExperimentalCnUseCnRuleSet: (value: boolean) => void;
 }) {
-  const effectiveRules = getEffectiveModuleRuleItems(module, moduleRuleOverrides, moduleRuleExclusions);
-  const excludedRuleIds = getExcludedModuleRuleIds(module.id, moduleRuleExclusions);
+  const effectiveRules = getEffectiveModuleRuleItems(module, ruleSetsByTarget, hiddenPresetRuleIds);
+  const excludedRuleIds = getExcludedModuleRuleIds(module.id, hiddenPresetRuleIds);
   const excludedRules = module.rules.filter((rule) => rule?.id && excludedRuleIds.has(rule.id));
   const movedCount = excludedRules.filter((rule) =>
-    isModuleRuleMovedFrom(module.id, rule.id, moduleRuleOverrides, customProxyGroups)
+    isModuleRuleMovedFrom(module.id, rule.id, ruleSetsByTarget, customProxyGroups)
   ).length;
   const removedCount = excludedRules.length - movedCount;
   const excludedCount = excludedRules.length;
@@ -296,8 +302,8 @@ export function ProxyGroupsModuleCard({
           module={module}
           enabledProxyGroups={enabledProxyGroups}
           hiddenProxyGroups={hiddenProxyGroups}
-          moduleRuleOverrides={moduleRuleOverrides}
-          moduleRuleExclusions={moduleRuleExclusions}
+          ruleSetsByTarget={ruleSetsByTarget}
+          hiddenPresetRuleIds={hiddenPresetRuleIds}
           customProxyGroups={customProxyGroups}
           manualRules={manualRules}
           manualRuleTargets={manualRuleTargets}
@@ -312,6 +318,7 @@ export function ProxyGroupsModuleCard({
           onMoveManualRule={onMoveManualRule}
           onRemoveManualRule={onRemoveManualRule}
           onRestoreRule={onRestoreRule}
+          onResetRuleTarget={onResetRuleTarget}
           cnIpNoResolve={cnIpNoResolve}
           onChangeCnIpNoResolve={onChangeCnIpNoResolve}
           experimentalCnUseCnRuleSet={experimentalCnUseCnRuleSet}

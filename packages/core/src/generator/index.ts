@@ -21,12 +21,18 @@ import {
 import { DEFAULT_DNS_CONFIG } from "./dns";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
 import type { ParsedNode } from "@subboost/core/types/node";
-import type { ClashConfig, UserConfig, TemplateType, ProxyGroup } from "@subboost/core/types/config";
-import type { CustomProxyGroup } from "@subboost/core/types/config";
-import type { DialerProxyGroup, ModuleRuleOverride } from "@subboost/core/types/template-config";
+import type {
+  BuiltinRuleEdits,
+  ClashConfig,
+  CustomProxyGroup,
+  CustomRuleSet,
+  ProxyGroup,
+  TemplateType,
+  UserConfig,
+} from "@subboost/core/types/config";
+import type { DialerProxyGroup } from "@subboost/core/types/template-config";
 import type { FilteredProxyGroup } from "@subboost/core/types/filtered-proxy-group";
 import { collectDnsPolicyEntries, configToYaml } from "./yaml";
-import type { ModuleRuleExclusions } from "./module-rules";
 import { isMihomoSupportedProxyNode, normalizeMihomoVlessForGeneration } from "@subboost/core/mihomo/proxy-sanitizer";
 import { chooseFallbackPolicyTarget, withBuiltinPolicyTargets } from "./policy-targets";
 
@@ -37,9 +43,9 @@ export interface GenerateOptions {
   userConfig?: Partial<UserConfig>;
   dialerProxyGroups?: DialerProxyGroup[];
   customProxyGroups?: CustomProxyGroup[];
+  customRuleSets?: CustomRuleSet[];
   filteredProxyGroups?: FilteredProxyGroup[];
-  moduleRuleOverrides?: Record<string, ModuleRuleOverride[]>;
-  moduleRuleExclusions?: ModuleRuleExclusions;
+  builtinRuleEdits?: BuiltinRuleEdits;
   proxyGroupNameOverrides?: Record<string, string>;
   proxyGroupOrder?: string[];
 }
@@ -175,9 +181,9 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     userConfig = {},
     dialerProxyGroups = [],
     customProxyGroups = [],
+    customRuleSets = [],
     filteredProxyGroups = [],
-    moduleRuleOverrides,
-    moduleRuleExclusions,
+    builtinRuleEdits,
     proxyGroupNameOverrides,
   } = options;
   
@@ -354,9 +360,9 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     testUrl: config.testUrl,
     testInterval: config.testInterval,
     customProxyGroups,
+    customRuleSets,
     filteredProxyGroups,
-    moduleRuleOverrides,
-    moduleRuleExclusions,
+    builtinRuleEdits,
     cnIpNoResolve: config.cnIpNoResolve,
     experimentalCnUseCnRuleSet: config.experimentalCnUseCnRuleSet,
     proxyGroupNameOverrides,

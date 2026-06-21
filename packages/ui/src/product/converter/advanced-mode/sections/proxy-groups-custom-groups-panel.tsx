@@ -6,9 +6,8 @@ import { Button } from "@subboost/ui/components/ui/button";
 import { toast } from "@subboost/ui/components/ui/toaster";
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-groups";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
-import { extractRuleSetPathFromUrl } from "@subboost/core/rules/custom-routing-rule-sets";
 import { DEFAULT_LOAD_BALANCE_STRATEGY, type LoadBalanceStrategy } from "@subboost/core/types/config";
-import { useConfigStore, type CustomProxyGroup, type ModuleRuleOverride } from "@subboost/ui/store/config-store";
+import { useConfigStore, type CustomProxyGroup } from "@subboost/ui/store/config-store";
 import { useProductInteractionAdapter } from "@subboost/ui/product/interactions";
 import {
   buildManualRuleTargets,
@@ -40,18 +39,19 @@ export function ProxyGroupsCustomGroupsPanel() {
   const {
     enabledProxyGroups,
     hiddenProxyGroups,
-    proxyGroupNameOverrides,
-    customRules,
-    customProxyGroups,
+    proxyGroupNameOverrides = {},
+    customRules = [],
+    customRuleSets = [],
+    customProxyGroups = [],
     addCustomProxyGroup,
     removeCustomProxyGroup,
     updateCustomProxyGroup,
     updateCustomRule,
     removeCustomRule,
-    toggleProxyGroup,
-    addModuleRules,
-    filteredProxyGroups,
-    dialerProxyGroups,
+    moveModuleRule,
+    removeModuleRule,
+    filteredProxyGroups = [],
+    dialerProxyGroups = [],
   } = useConfigStore();
 
   const [expandedCustomGroups, setExpandedCustomGroups] = React.useState<Set<string>>(new Set());
@@ -131,13 +131,15 @@ export function ProxyGroupsCustomGroupsPanel() {
 
       const state = useConfigStore.getState();
       const sourceGroup = state.customProxyGroups.find((group) => group.id === sourceGroupId);
-      const sourceRule = sourceGroup?.rules.find((rule) => rule.id === ruleId);
+      const sourceRule = sourceGroup
+        ? state.customRuleSets.find((rule) => rule.id === ruleId && rule.target === sourceGroup.name)
+        : null;
       if (!sourceGroup || !sourceRule) return;
 
       if (target.kind === "custom") {
         const targetGroup = state.customProxyGroups.find((group) => group.id === target.id);
         if (!targetGroup) return;
-        if (targetGroup.rules.some((rule) => rule.id === sourceRule.id)) {
+        if (state.customRuleSets.some((rule) => rule.id === sourceRule.id && rule.target === targetGroup.name)) {
           toast({
             title: "规则集已存在",
             description: "目标分流组里已经有同名规则集，请先移除重复项。",
@@ -145,32 +147,11 @@ export function ProxyGroupsCustomGroupsPanel() {
           });
           return;
         }
-
-        updateCustomProxyGroup(sourceGroup.id, {
-          rules: sourceGroup.rules.filter((rule) => rule.id !== sourceRule.id),
-        });
-        updateCustomProxyGroup(targetGroup.id, {
-          rules: [...targetGroup.rules, sourceRule],
-        });
-        return;
       }
 
-      const moduleRule: ModuleRuleOverride = {
-        id: sourceRule.id,
-        name: sourceRule.name,
-        behavior: sourceRule.behavior,
-        path: extractRuleSetPathFromUrl(sourceRule.url),
-        ...(sourceRule.noResolve ? { noResolve: true } : {}),
-      };
-      if (!enabledProxyGroups.includes(target.id)) {
-        toggleProxyGroup(target.id);
-      }
-      addModuleRules(target.id, [moduleRule]);
-      updateCustomProxyGroup(sourceGroup.id, {
-        rules: sourceGroup.rules.filter((rule) => rule.id !== sourceRule.id),
-      });
+      moveModuleRule(sourceGroup.id, ruleId, target);
     },
-    [addModuleRules, enabledProxyGroups, toggleProxyGroup, updateCustomProxyGroup],
+    [moveModuleRule],
   );
 
   return (
@@ -219,7 +200,6 @@ export function ProxyGroupsCustomGroupsPanel() {
               emoji,
               groupType: newCustomGroupType,
               ...(newCustomGroupType === "load-balance" ? { strategy: newCustomGroupStrategy } : {}),
-              rules: [],
             });
             interactions.proxyGroupAdded?.({ groupType: newCustomGroupType });
             setNewCustomGroupDraft({ emoji: "🧩", name: "" });
@@ -239,7 +219,8 @@ export function ProxyGroupsCustomGroupsPanel() {
             const isExpanded = expandedCustomGroups.has(group.id);
             const isEditing = editingCustomGroupId === group.id;
             const manualRules = listCustomRulesForTarget(customRules, group.name);
-            const totalRules = group.rules.length + manualRules.length;
+            const groupRuleSets = customRuleSets.filter((ruleSet) => ruleSet.target === group.name);
+            const totalRules = groupRuleSets.length + manualRules.length;
             const typeLabel =
               group.groupType === "load-balance"
                 ? `${getProxyGroupTypeLabel(group.groupType)} / ${getLoadBalanceStrategyLabel(
@@ -410,11 +391,11 @@ export function ProxyGroupsCustomGroupsPanel() {
                       </p>
                     ) : (
                       <>
-                        {group.rules.map((r) => (
+                        {groupRuleSets.map((r) => (
                           <ProxyGroupRuleSetRow
                             key={`ruleset:${r.id}`}
                             name={r.name}
-                            path={extractRuleSetPathFromUrl(r.url)}
+                            path={r.path}
                             source="custom"
                             behavior={r.behavior}
                             noResolve={r.noResolve}
@@ -437,10 +418,7 @@ export function ProxyGroupsCustomGroupsPanel() {
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 px-2 text-white/35 hover:text-red-300"
-                                  onClick={() => {
-                                    const next = group.rules.filter((x) => x.id !== r.id);
-                                    updateCustomProxyGroup(group.id, { rules: next });
-                                  }}
+                                  onClick={() => removeModuleRule(group.id, r.id)}
                                   title="删除规则集"
                                   aria-label={`删除 ${r.name} 规则集`}
                                 >

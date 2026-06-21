@@ -195,6 +195,24 @@ export interface CustomRule {
   noResolve?: boolean;
 }
 
+export type RuleSetBehavior = "domain" | "ipcidr";
+
+export interface CustomRuleSet {
+  id: string;
+  name: string;
+  behavior: RuleSetBehavior;
+  path: string;
+  target: string;
+  noResolve?: boolean;
+}
+
+export type BuiltinRuleEdit = {
+  target?: string;
+  enabled?: false;
+};
+
+export type BuiltinRuleEdits = Record<string, BuiltinRuleEdit>;
+
 /**
  * 自定义代理组
  */
@@ -204,13 +222,6 @@ export interface CustomProxyGroup {
   emoji: string;
   groupType: "select" | "url-test" | "fallback" | "load-balance" | "direct-first" | "reject-first";
   strategy?: LoadBalanceStrategy;
-  rules: {
-    id: string;
-    name: string;
-    behavior: "domain" | "ipcidr";
-    url: string;
-    noResolve?: boolean;
-  }[];
 }
 
 /**
@@ -226,4 +237,3 @@ export interface TemplateConfig {
   rules: string[];
   dns: Partial<DNSConfig>;
 }
-

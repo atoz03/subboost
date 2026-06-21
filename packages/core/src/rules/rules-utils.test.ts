@@ -43,34 +43,34 @@ describe("custom rule helpers", () => {
         [rule],
         [
           {
-            id: "group",
-            name: "Group",
-            emoji: "G",
-            groupType: "select",
-            rules: [{ id: "nested", name: "Nested", behavior: "domain", url: "https://rules.example.com/a.mrs" }],
+            id: "nested",
+            name: "Nested",
+            behavior: "domain",
+            path: "https://rules.example.com/a.mrs",
+            target: "Group",
           },
         ]
       )
     ).toEqual([
       "custom-rule:custom-rule-domain-suffix-example-com-direct-3",
-      "custom-group:group:nested",
+      "custom-rule-set:nested",
     ]);
     expect(
       reconcileRuleOrder(
-        ["missing", "custom-group:group:nested", "custom-group:group:nested"],
+        ["missing", "custom-rule-set:nested", "custom-rule-set:nested"],
         [rule],
         [
           {
-            id: "group",
-            name: "Group",
-            emoji: "G",
-            groupType: "select",
-            rules: [{ id: "nested", name: "Nested", behavior: "domain", url: "https://rules.example.com/a.mrs" }],
+            id: "nested",
+            name: "Nested",
+            behavior: "domain",
+            path: "https://rules.example.com/a.mrs",
+            target: "Group",
           },
         ]
       )
     ).toEqual([
-      "custom-group:group:nested",
+      "custom-rule-set:nested",
       "custom-rule:custom-rule-domain-suffix-example-com-direct-3",
     ]);
   });

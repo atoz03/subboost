@@ -306,15 +306,15 @@ describe("createProxyGroupActions", () => {
   it("adds, updates, removes, and restores module rules", () => {
     const { actions, getState } = createHarness({
       enabledProxyGroups: ["select", "auto", "ai"],
-      moduleRuleExclusions: { ai: ["openai"] },
-      moduleRuleOverrides: {},
+      builtinRuleEdits: { "module:ai:openai": { enabled: false } },
+      customRuleSets: [],
     });
 
     actions.addModuleRules("", [
       { id: "ignored", name: "Ignored", behavior: "domain", path: "geosite/ignored.mrs" },
     ]);
     actions.addModuleRules("ai", []);
-    expect(getState().moduleRuleOverrides).toEqual({});
+    expect(getState().customRuleSets).toEqual([]);
 
     actions.addModuleRules("ai", [
       { id: "openai", name: "OpenAI", behavior: "domain", path: "geosite/openai.mrs" },
@@ -322,9 +322,9 @@ describe("createProxyGroupActions", () => {
       { id: "", name: "Invalid", behavior: "domain", path: "" },
     ]);
 
-    expect(getState().moduleRuleExclusions).toEqual({});
-    expect(getState().moduleRuleOverrides.ai).toEqual([
-      { id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs" },
+    expect(getState().builtinRuleEdits).toEqual({});
+    expect(getState().customRuleSets).toEqual([
+      { id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 AI 服务" },
     ]);
 
     const beforeDuplicateAdd = getState();
@@ -339,11 +339,12 @@ describe("createProxyGroupActions", () => {
       path: "geoip/custom-ai.mrs",
     });
 
-    expect(getState().moduleRuleOverrides.ai[0]).toEqual({
+    expect(getState().customRuleSets[0]).toEqual({
       id: "custom-ai",
       name: "Custom AI IP",
       behavior: "ipcidr",
       path: "geoip/custom-ai.mrs",
+      target: "🤖 AI 服务",
       noResolve: true,
     });
 
@@ -355,21 +356,21 @@ describe("createProxyGroupActions", () => {
     expect(getState()).toBe(beforeMissingUpdate);
 
     actions.removeModuleRule("ai", "openai");
-    expect(getState().moduleRuleExclusions).toEqual({ ai: ["openai"] });
+    expect(getState().builtinRuleEdits).toEqual({ "module:ai:openai": { enabled: false } });
 
     actions.removeModuleRule("ai", "missing");
     actions.removeModuleRule("missing", "openai");
-    expect(getState().moduleRuleExclusions).toEqual({ ai: ["openai"] });
+    expect(getState().builtinRuleEdits).toEqual({ "module:ai:openai": { enabled: false } });
 
     actions.restoreModuleRule("ai", "openai");
-    expect(getState().moduleRuleExclusions).toEqual({});
+    expect(getState().builtinRuleEdits).toEqual({});
 
     actions.restoreModuleRule("ai", "openai");
     actions.restoreModuleRule("missing", "openai");
-    expect(getState().moduleRuleExclusions).toEqual({});
+    expect(getState().builtinRuleEdits).toEqual({});
 
     actions.removeModuleRule("ai", "custom-ai");
-    expect(getState().moduleRuleOverrides).toEqual({});
+    expect(getState().customRuleSets).toEqual([]);
   });
 
   it("keeps full rule order positions across preset rule remove, restore, hide, and move", () => {
@@ -378,8 +379,8 @@ describe("createProxyGroupActions", () => {
       enabledModules: enabledProxyGroups,
       customRules: [],
       customProxyGroups: [],
-      moduleRuleOverrides: {},
-      moduleRuleExclusions: {},
+      customRuleSets: [],
+      builtinRuleEdits: {},
       proxyGroupNameOverrides: {},
       experimentalCnUseCnRuleSet: true,
       cnIpNoResolve: true,
@@ -390,7 +391,6 @@ describe("createProxyGroupActions", () => {
       .map((entry) => entry.key);
     const openAiKey = "module:ai:openai";
     const appleTvPlusKey = "module:streaming-west:apple-tvplus";
-    const movedAppleTvPlusKey = "module:google:apple-tvplus";
     const openAiIndex = fullRuleOrder.indexOf(openAiKey);
     const appleTvPlusIndex = fullRuleOrder.indexOf(appleTvPlusKey);
     const getAppliedOrder = () => {
@@ -399,22 +399,20 @@ describe("createProxyGroupActions", () => {
         ...baseRuleOptions,
         enabledModules: state.enabledProxyGroups,
         customRules: state.customRules,
-        customProxyGroups: state.customProxyGroups,
-        moduleRuleOverrides: state.moduleRuleOverrides,
-        moduleRuleExclusions: state.moduleRuleExclusions,
+        customRuleSets: state.customRuleSets,
+        builtinRuleEdits: state.builtinRuleEdits,
         proxyGroupNameOverrides: state.proxyGroupNameOverrides,
         ruleOrder: state.ruleOrder,
       });
     };
     const { actions, getState } = createHarness({
       enabledProxyGroups,
-      moduleRuleOverrides: {},
-      moduleRuleExclusions: {},
+      customRuleSets: [],
+      builtinRuleEdits: {},
       proxyGroupNameOverrides: {},
       experimentalCnUseCnRuleSet: true,
       cnIpNoResolve: true,
       ruleOrder: fullRuleOrder,
-      allRulesOrderEditingEnabled: true,
     });
 
     actions.removeModuleRule("ai", "openai");
@@ -431,31 +429,34 @@ describe("createProxyGroupActions", () => {
 
     actions.moveModuleRule("streaming-west", "apple-tvplus", { kind: "module", id: "google" });
     expect(getState().ruleOrder).toContain(appleTvPlusKey);
-    expect(getAppliedOrder().indexOf(movedAppleTvPlusKey)).toBe(appleTvPlusIndex);
-    actions.moveModuleRule("google", "apple-tvplus", { kind: "module", id: "streaming-west" });
+    expect(getState().builtinRuleEdits[appleTvPlusKey]).toEqual({ target: "🔍 谷歌服务" });
+    expect(getAppliedOrder().indexOf(appleTvPlusKey)).toBe(appleTvPlusIndex);
+    actions.resetModuleRuleTarget("streaming-west", "apple-tvplus");
+    expect(getState().builtinRuleEdits).toEqual({});
     expect(getAppliedOrder().indexOf(appleTvPlusKey)).toBe(appleTvPlusIndex);
   });
 
   it("adds preset-only and custom module rules with normalized fallback fields", () => {
     const { actions, getState } = createHarness({
       enabledProxyGroups: ["select", "auto", "ai"],
-      moduleRuleExclusions: { ai: ["openai"] },
-      moduleRuleOverrides: undefined,
+      builtinRuleEdits: { "module:ai:openai": { enabled: false } },
+      customRuleSets: [],
+      customProxyGroups: [{ id: "custom-module", name: "Custom Module", emoji: "", groupType: "select" }],
     });
 
     actions.addModuleRules("ai", [
       { id: "openai", name: "OpenAI", behavior: "domain", path: "geosite/openai.mrs" },
     ]);
 
-    expect(getState().moduleRuleOverrides).toBeUndefined();
-    expect(getState().moduleRuleExclusions).toEqual({});
+    expect(getState().customRuleSets).toEqual([]);
+    expect(getState().builtinRuleEdits).toEqual({});
 
     actions.addModuleRules("custom-module", [
       { id: "custom", name: "   ", behavior: "domain", path: "geoip/custom.mrs" },
     ]);
 
-    expect(getState().moduleRuleOverrides["custom-module"]).toEqual([
-      { id: "custom", name: "custom", behavior: "ipcidr", path: "geoip/custom.mrs", noResolve: true },
+    expect(getState().customRuleSets).toEqual([
+      { id: "custom", name: "custom", behavior: "ipcidr", path: "geoip/custom.mrs", target: "Custom Module", noResolve: true },
     ]);
 
     const beforePresetNoop = getState();
@@ -468,8 +469,8 @@ describe("createProxyGroupActions", () => {
   it("keeps active preset module rules stable when nothing needs restoring", () => {
     const { actions, getState } = createHarness({
       enabledProxyGroups: ["select", "auto", "ai"],
-      moduleRuleExclusions: {},
-      moduleRuleOverrides: {},
+      builtinRuleEdits: {},
+      customRuleSets: [],
     });
 
     const before = getState();
@@ -482,16 +483,20 @@ describe("createProxyGroupActions", () => {
 
   it("restores all default module rules for one module and accepts edit warnings", () => {
     const { actions, getState } = createHarness({
-      moduleRuleExclusions: { ai: ["openai", "anthropic"], youtube: ["youtube"] },
+      builtinRuleEdits: {
+        "module:ai:openai": { enabled: false },
+        "module:ai:anthropic": { enabled: false },
+        "module:youtube:youtube": { enabled: false },
+      },
       moduleRuleEditWarningAccepted: false,
     });
 
     actions.restoreModuleDefaultRules("ai");
-    expect(getState().moduleRuleExclusions).toEqual({ youtube: ["youtube"] });
+    expect(getState().builtinRuleEdits).toEqual({ "module:youtube:youtube": { enabled: false } });
 
     actions.restoreModuleDefaultRules("");
     actions.restoreModuleDefaultRules("ai");
-    expect(getState().moduleRuleExclusions).toEqual({ youtube: ["youtube"] });
+    expect(getState().builtinRuleEdits).toEqual({ "module:youtube:youtube": { enabled: false } });
 
     actions.acceptModuleRuleEditWarning();
     expect(getState().moduleRuleEditWarningAccepted).toBe(true);
@@ -507,43 +512,36 @@ describe("createProxyGroupActions", () => {
           name: "Custom",
           emoji: "",
           groupType: "select",
-          rules: [],
         },
         {
           id: "custom-2",
           name: "Other",
           emoji: "",
           groupType: "select",
-          rules: [],
         },
       ],
-      moduleRuleOverrides: {},
-      moduleRuleExclusions: {},
+      customRuleSets: [],
+      builtinRuleEdits: {},
     });
 
     actions.moveModuleRule("ai", "openai", { kind: "module", id: "youtube" });
 
     expect(getState().enabledProxyGroups).toContain("youtube");
-    expect(getState().moduleRuleExclusions).toEqual({ ai: ["openai"] });
-    expect(getState().moduleRuleOverrides.youtube).toEqual([
-      { id: "openai", name: "OpenAI", behavior: "domain", path: "geosite/openai.mrs" },
-    ]);
+    expect(getState().builtinRuleEdits).toEqual({ "module:ai:openai": { target: "📹 油管视频" } });
 
     actions.moveModuleRule("ai", "anthropic", { kind: "custom", id: "custom-1" });
 
-    expect(getState().customProxyGroups[0].rules).toEqual([
-      {
-        id: "anthropic",
-        name: "Anthropic (Claude)",
-        behavior: "domain",
-        url: "https://rules.example.com/base/geosite/anthropic.mrs",
-      },
-    ]);
-    expect(getState().customProxyGroups[1].rules).toEqual([]);
-    expect(getState().moduleRuleExclusions.ai).toEqual(["openai", "anthropic"]);
+    expect(getState().customRuleSets).toEqual([]);
+    expect(getState().builtinRuleEdits).toEqual({
+      "module:ai:openai": { target: "📹 油管视频" },
+      "module:ai:anthropic": { target: "Custom" },
+    });
 
     actions.moveModuleRule("ai", "anthropic", { kind: "custom", id: "custom-1" });
-    expect(getState().customProxyGroups[0].rules).toHaveLength(1);
+    expect(getState().builtinRuleEdits).toEqual({
+      "module:ai:openai": { target: "📹 油管视频" },
+      "module:ai:anthropic": { target: "Custom" },
+    });
 
     const beforeIgnoredMoves = getState();
     actions.moveModuleRule("", "openai", { kind: "module", id: "youtube" });
@@ -560,52 +558,44 @@ describe("createProxyGroupActions", () => {
   it("moves custom module override rules into builtin modules", () => {
     const { actions, getState } = createHarness({
       enabledProxyGroups: ["select", "auto"],
-      moduleRuleOverrides: {
-        ai: [{ id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs" }],
-      },
-      moduleRuleExclusions: {},
+      customRuleSets: [
+        { id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 AI 服务" },
+      ],
+      builtinRuleEdits: {},
     });
 
     actions.moveModuleRule("ai", "custom-ai", { kind: "module", id: "youtube" });
 
     expect(getState().enabledProxyGroups).toEqual(["select", "auto", "youtube"]);
-    expect(getState().moduleRuleOverrides).toEqual({
-      youtube: [{ id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs" }],
-    });
+    expect(getState().customRuleSets).toEqual([
+      { id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "📹 油管视频" },
+    ]);
   });
 
   it("moves extra rules without duplicating target presets or existing target overrides", () => {
     const { actions, getState } = createHarness({
       enabledProxyGroups: ["select", "auto", "youtube"],
-      moduleRuleOverrides: {
-        ai: [
-          { id: "youtube", name: "YouTube Copy", behavior: "domain", path: "geosite/youtube.mrs" },
-          { id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs" },
-        ],
-        youtube: [
-          { id: "custom-ai", name: "Existing Custom AI", behavior: "domain", path: "geosite/existing.mrs" },
-        ],
-      },
-      moduleRuleExclusions: { youtube: ["youtube"] },
+      customRuleSets: [
+        { id: "youtube", name: "YouTube Copy", behavior: "domain", path: "geosite/youtube.mrs", target: "🤖 AI 服务" },
+        { id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 AI 服务" },
+        { id: "custom-ai", name: "Existing Custom AI", behavior: "domain", path: "geosite/existing.mrs", target: "📹 油管视频" },
+      ],
+      builtinRuleEdits: { "module:youtube:youtube": { enabled: false } },
     });
 
     actions.moveModuleRule("ai", "youtube", { kind: "module", id: "youtube" });
 
-    expect(getState().moduleRuleExclusions).toEqual({});
-    expect(getState().moduleRuleOverrides.ai).toEqual([
-      { id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs" },
-    ]);
-    expect(getState().moduleRuleOverrides.youtube).toEqual([
-      { id: "custom-ai", name: "Existing Custom AI", behavior: "domain", path: "geosite/existing.mrs" },
+    expect(getState().builtinRuleEdits).toEqual({});
+    expect(getState().customRuleSets).toEqual([
+      { id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 AI 服务" },
+      { id: "custom-ai", name: "Existing Custom AI", behavior: "domain", path: "geosite/existing.mrs", target: "📹 油管视频" },
     ]);
 
     actions.moveModuleRule("ai", "custom-ai", { kind: "module", id: "youtube" });
 
-    expect(getState().moduleRuleOverrides).toEqual({
-      youtube: [
-        { id: "custom-ai", name: "Existing Custom AI", behavior: "domain", path: "geosite/existing.mrs" },
-      ],
-    });
+    expect(getState().customRuleSets).toEqual([
+      { id: "custom-ai", name: "Existing Custom AI", behavior: "domain", path: "geosite/existing.mrs", target: "📹 油管视频" },
+    ]);
   });
 
   it("keeps no-resolve when moving IP preset rules into custom groups", () => {
@@ -617,25 +607,16 @@ describe("createProxyGroupActions", () => {
           name: "Custom",
           emoji: "",
           groupType: "select",
-          rules: [],
         },
       ],
-      moduleRuleExclusions: {},
-      moduleRuleOverrides: {},
+      customRuleSets: [],
+      builtinRuleEdits: {},
     });
 
     actions.moveModuleRule("private", "private-ip", { kind: "custom", id: "custom-1" });
 
-    expect(getState().customProxyGroups[0].rules).toEqual([
-      {
-        id: "private-ip",
-        name: "私有IP",
-        behavior: "ipcidr",
-        url: "https://rules.example.com/base/geoip/private.mrs",
-        noResolve: true,
-      },
-    ]);
-    expect(getState().moduleRuleExclusions).toEqual({ private: ["private-ip"] });
+    expect(getState().customRuleSets).toEqual([]);
+    expect(getState().builtinRuleEdits).toEqual({ "module:private:private-ip": { target: "Custom" } });
   });
 
   it("renames non-core module groups and rewrites custom rule targets", () => {

@@ -3,9 +3,7 @@
 import * as React from "react";
 import { ArrowDown, ArrowUp, ListOrdered } from "lucide-react";
 import { Badge } from "@subboost/ui/components/ui/badge";
-import { confirmDialog } from "@subboost/ui/components/ui/confirm-dialog";
 import { Input } from "@subboost/ui/components/ui/input";
-import { Switch } from "@subboost/ui/components/ui/switch";
 import {
   buildGeneratedRuleEntries,
   type GeneratedRuleEntry,
@@ -42,28 +40,23 @@ export function RulesManagementSection({
   const {
     enabledProxyGroups,
     customRules,
-    customProxyGroups,
-    moduleRuleOverrides,
-    moduleRuleExclusions,
+    customRuleSets,
+    builtinRuleEdits,
     proxyGroupNameOverrides,
     cnIpNoResolve,
     experimentalCnUseCnRuleSet,
     ruleOrder,
     setRuleOrder,
-    allRulesOrderEditingEnabled,
-    setAllRulesOrderEditingEnabled,
   } = useConfigStore();
   const [orderDrafts, setOrderDrafts] = React.useState<Record<string, string>>({});
-  const allRulesMode = allRulesOrderEditingEnabled;
 
   const entries = React.useMemo(
     () =>
       buildGeneratedRuleEntries({
         enabledModules: enabledProxyGroups,
         customRules,
-        customProxyGroups,
-        moduleRuleOverrides,
-        moduleRuleExclusions,
+        customRuleSets,
+        builtinRuleEdits,
         proxyGroupNameOverrides,
         cnIpNoResolve,
         experimentalCnUseCnRuleSet,
@@ -71,24 +64,22 @@ export function RulesManagementSection({
       }),
     [
       cnIpNoResolve,
-      customProxyGroups,
+      customRuleSets,
       customRules,
       enabledProxyGroups,
       experimentalCnUseCnRuleSet,
-      moduleRuleOverrides,
-      moduleRuleExclusions,
+      builtinRuleEdits,
       proxyGroupNameOverrides,
       ruleOrder,
     ]
   );
 
-  const editableEntries = React.useMemo(() => entries.filter((entry) => entry.editable), [entries]);
   const preMatchEntries = React.useMemo(
     () => entries.filter((entry) => entry.key !== "special:match"),
     [entries]
   );
   const preMatchKeys = React.useMemo(() => preMatchEntries.map((entry) => entry.key), [preMatchEntries]);
-  const editableKeys = React.useMemo(() => editableEntries.map((entry) => entry.key), [editableEntries]);
+  const editableKeys = preMatchKeys;
 
   const applyRuleOrder = React.useCallback(
     (nextRuleOrder: string[]) => {
@@ -132,36 +123,6 @@ export function RulesManagementSection({
     [applyRuleOrder, preMatchEntries.length, preMatchKeys]
   );
 
-  const handleToggleAllRulesMode = React.useCallback(
-    async (checked: boolean) => {
-      if (!checked) {
-        setAllRulesOrderEditingEnabled(false);
-        return;
-      }
-
-      const ok = await confirmDialog({
-        title: "开启“调整所有规则顺序”？",
-        description: (
-          <span className="block pt-2">
-            <span className="block rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 leading-6 text-amber-100/90">
-              <span className="font-medium text-amber-200">警告：</span>
-              开启后，你可以移动任意规则到任意位置，这会改变分流优先级与命中结果。
-            </span>
-            <span className="mt-3 block leading-6 text-white/65">
-              如果你不知道调整规则顺序的影响，请不要动它。
-            </span>
-          </span>
-        ),
-        cancelText: "保持默认",
-        confirmText: "继续开启",
-        variant: "warning",
-      });
-      if (!ok) return;
-      setAllRulesOrderEditingEnabled(true);
-    },
-    [setAllRulesOrderEditingEnabled]
-  );
-
   return (
     <div>
       <SectionHeader
@@ -171,7 +132,7 @@ export function RulesManagementSection({
         onToggle={onToggle}
         badge={
           <Badge variant="outline" className="ml-auto shrink-0 border-emerald-500/40 bg-emerald-500/10 text-emerald-300">
-            可调 {allRulesMode ? preMatchEntries.length : editableEntries.length} / 全部 {entries.length}
+            可调 {preMatchEntries.length} / 全部 {entries.length}
           </Badge>
         }
       />
@@ -181,17 +142,7 @@ export function RulesManagementSection({
           <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
               <div className="min-w-0 flex-[1_1_13rem] text-[11px] leading-5 text-white/60">
-                {allRulesMode
-                  ? "已开启全规则排序：可移动任意规则，但 MATCH 固定最后。"
-                  : "默认只能调整自定义规则顺序。"}
-              </div>
-              <div className="ml-auto flex shrink-0 items-center gap-2">
-                <span className="text-[11px] whitespace-nowrap text-white/55">调整所有规则顺序</span>
-                <Switch
-                  checked={allRulesMode}
-                  onCheckedChange={handleToggleAllRulesMode}
-                  disabled={preMatchEntries.length <= 1}
-                />
+                可移动任意非 MATCH 规则；排序只决定命中优先级，目标只决定命中后进入哪个分流组。
               </div>
             </div>
           </div>
@@ -199,7 +150,7 @@ export function RulesManagementSection({
           <div className="max-h-[460px] overflow-y-auto overflow-x-hidden rounded-lg border border-white/10 bg-black/10 pr-1 custom-scrollbar">
             {entries.map((entry, index) => {
               const fullIndex = preMatchKeys.indexOf(entry.key);
-              const canEditOrder = entry.key !== "special:match" && (allRulesMode || entry.editable);
+              const canEditOrder = entry.key !== "special:match";
               const canMoveUp = canEditOrder && fullIndex > 0;
               const canMoveDown = canEditOrder && fullIndex >= 0 && fullIndex < preMatchKeys.length - 1;
               const absoluteOrder = index + 1;

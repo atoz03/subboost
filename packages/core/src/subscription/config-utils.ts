@@ -1,7 +1,7 @@
 import type { GenerateOptions } from "@subboost/core/generator";
 import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
 import { normalizeModuleRuleExclusions, type ModuleRuleExclusions } from "@subboost/core/generator/module-rules";
-import type { DialerProxyGroup, ModuleRuleOverride } from "@subboost/core/types/template-config";
+import type { DialerProxyGroup } from "@subboost/core/types/template-config";
 import type { ParsedNode } from "@subboost/core/types/node";
 import {
   DEFAULT_LOAD_BALANCE_STRATEGY,
@@ -16,6 +16,7 @@ import { stripImportedNodeControlFieldsFromList } from "@subboost/core/subscript
 import { buildProxyProvidersFromConfig } from "@subboost/core/subscription/proxy-providers";
 import { ensureCustomRuleId } from "@subboost/core/rules/custom-rule-utils";
 import { DEFAULT_SUBBOOST_CONFIG } from "@subboost/core/config/defaults";
+import { normalizeRuleModelFromConfig } from "@subboost/core/rules/rule-model";
 
 export type ModuleRuleOverrideLike = {
   id: string;
@@ -220,25 +221,6 @@ function normalizeCustomProxyGroups(value: unknown): CustomProxyGroup[] {
 
     if (!id || !name || !emoji || !groupType) continue;
 
-    const rawRules = Array.isArray(item.rules) ? item.rules : [];
-    const rules: CustomProxyGroup["rules"] = [];
-    for (const rawRule of rawRules) {
-      if (!isRecord(rawRule)) continue;
-      const rid = toTrimmedString(rawRule.id);
-      const rname = toTrimmedString(rawRule.name);
-      const behavior = rawRule.behavior === "domain" || rawRule.behavior === "ipcidr" ? rawRule.behavior : null;
-      const url = toTrimmedString(rawRule.url);
-      if (!rid || !rname || !behavior || !url) continue;
-      const noResolve = typeof rawRule.noResolve === "boolean" ? rawRule.noResolve : undefined;
-      rules.push({
-        id: rid,
-        name: rname,
-        behavior,
-        url,
-        ...(noResolve !== undefined ? { noResolve } : {}),
-      });
-    }
-
     const strategy =
       groupType === "load-balance"
         ? isLoadBalanceStrategy(item.strategy)
@@ -246,7 +228,7 @@ function normalizeCustomProxyGroups(value: unknown): CustomProxyGroup[] {
           : DEFAULT_LOAD_BALANCE_STRATEGY
         : undefined;
 
-    out.push({ id, name, emoji, groupType, ...(strategy ? { strategy } : {}), rules });
+    out.push({ id, name, emoji, groupType, ...(strategy ? { strategy } : {}) });
   }
   return out;
 }
@@ -360,7 +342,12 @@ export function buildGenerateOptionsFromConfig(
   const enabledGroups = normalizeEnabledList(config.enabledGroups);
   const enabledRules = normalizeEnabledList(config.enabledRules);
   const customRules = normalizeCustomRules(config.customRules);
-  const customProxyGroups = normalizeCustomProxyGroups(config.customProxyGroups);
+  const ruleModel = normalizeRuleModelFromConfig(config);
+  const customProxyGroups = ruleModel.customProxyGroups.length > 0
+    ? ruleModel.customProxyGroups
+    : normalizeCustomProxyGroups(config.customProxyGroups);
+  const customRuleSets = ruleModel.customRuleSets;
+  const builtinRuleEdits = ruleModel.builtinRuleEdits;
   const dnsYaml = typeof config.dnsYaml === "string" ? config.dnsYaml : undefined;
   const ruleProviderBaseUrl =
     typeof config.ruleProviderBaseUrl === "string" && config.ruleProviderBaseUrl.trim().startsWith("http")
@@ -377,16 +364,11 @@ export function buildGenerateOptionsFromConfig(
     typeof config.experimentalCnUseCnRuleSet === "boolean" ? config.experimentalCnUseCnRuleSet : undefined;
   const proxyGroupNameOverrides = normalizeProxyGroupNameOverrides(config.proxyGroupNameOverrides);
   const listenerPorts = normalizeListenerPorts(config.listenerPorts);
-  const moduleRuleOverrides = extractModuleRuleOverrides(config) as unknown as
-    | Record<string, ModuleRuleOverride[]>
-    | undefined;
-  const moduleRuleExclusions = extractModuleRuleExclusions(config);
   const ruleOrder = normalizePersistedRuleOrder({
     enabledModules: enabledGroups || [],
     customRules: customRules || [],
-    customProxyGroups,
-    moduleRuleOverrides: moduleRuleOverrides || {},
-    moduleRuleExclusions: moduleRuleExclusions || {},
+    customRuleSets,
+    builtinRuleEdits,
     proxyGroupNameOverrides,
     experimentalCnUseCnRuleSet,
     cnIpNoResolve,
@@ -422,9 +404,9 @@ export function buildGenerateOptionsFromConfig(
     userConfig,
     ...(dialerProxyGroups.length > 0 ? { dialerProxyGroups } : {}),
     ...(customProxyGroups.length > 0 ? { customProxyGroups } : {}),
+    ...(customRuleSets.length > 0 ? { customRuleSets } : {}),
     ...(filteredProxyGroups.length > 0 ? { filteredProxyGroups } : {}),
-    ...(moduleRuleOverrides ? { moduleRuleOverrides } : {}),
-    ...(moduleRuleExclusions ? { moduleRuleExclusions } : {}),
+    ...(Object.keys(builtinRuleEdits).length > 0 ? { builtinRuleEdits } : {}),
     ...(proxyGroupNameOverrides ? { proxyGroupNameOverrides } : {}),
     ...(proxyGroupOrder ? { proxyGroupOrder } : {}),
   };

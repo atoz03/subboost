@@ -34,10 +34,9 @@ describe("createTemplateActions", () => {
       hiddenProxyGroups: ["ai"],
       appliedTemplateId: "custom-template",
       customRules: [{ id: "rule-1", type: "DOMAIN", value: "example.com", target: "Proxy" }],
-      moduleRuleOverrides: { ai: [{ id: "openai", name: "OpenAI", behavior: "domain", path: "geosite/openai.mrs" }] },
-      moduleRuleExclusions: { ai: ["anthropic"] },
+      customRuleSets: [{ id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 AI 服务" }],
+      builtinRuleEdits: { "module:ai:anthropic": { enabled: false } },
       ruleOrder: ["module:ai:openai"],
-      allRulesOrderEditingEnabled: true,
       moduleRuleEditWarningAccepted: true,
     });
 
@@ -49,10 +48,9 @@ describe("createTemplateActions", () => {
       hiddenProxyGroups: [],
       appliedTemplateId: getBuiltinTemplateId("standard"),
       customRules: [],
-      moduleRuleOverrides: {},
-      moduleRuleExclusions: {},
+      customRuleSets: [],
+      builtinRuleEdits: {},
       ruleOrder: [],
-      allRulesOrderEditingEnabled: false,
       moduleRuleEditWarningAccepted: false,
     });
 
@@ -84,7 +82,7 @@ describe("createTemplateActions", () => {
       ruleOrder: ["custom-rule:old-rule"],
     });
 
-    const config: SubBoostTemplateConfig = {
+    const config = {
       schema: "subboost-template-config/v1",
       template: "full",
       enabledProxyGroups: ["select", "ai", "google"],
@@ -95,7 +93,15 @@ describe("createTemplateActions", () => {
           name: "Custom Group",
           emoji: "",
           groupType: "select",
-          rules: [{ id: "custom-provider", name: "Custom Provider", behavior: "domain", url: "https://example.com/rule.mrs" }],
+        },
+      ],
+      customRuleSets: [
+        {
+          id: "custom-provider",
+          name: "Custom Provider",
+          behavior: "domain",
+          path: "https://example.com/rule.mrs",
+          target: "Custom Group",
         },
       ],
       filteredProxyGroups: [
@@ -128,7 +134,7 @@ describe("createTemplateActions", () => {
       testUrl: "https://example.com/generate_204",
       testInterval: 60,
       ruleProviderBaseUrl: "https://example.com/rules",
-    };
+    } as unknown as SubBoostTemplateConfig;
 
     actions.applyTemplateConfig(config);
 
@@ -136,12 +142,26 @@ describe("createTemplateActions", () => {
       template: "full",
       enabledProxyGroups: ["select", "google"],
       hiddenProxyGroups: ["ai"],
-      customProxyGroups: config.customProxyGroups,
+      customProxyGroups: [
+        {
+          id: "custom-group-1",
+          name: "Custom Group",
+          emoji: "",
+          groupType: "select",
+        },
+      ],
       filteredProxyGroups: config.filteredProxyGroups,
-      moduleRuleOverrides: config.moduleRuleOverrides,
-      moduleRuleExclusions: { ai: ["openai"] },
+      customRuleSets: [
+        {
+          id: "custom-provider",
+          name: "Custom Provider",
+          behavior: "domain",
+          path: "https://example.com/rule.mrs",
+          target: "Custom Group",
+        },
+      ],
+      builtinRuleEdits: { "module:ai:openai": { target: "🔍 Google" } },
       moduleRuleEditWarningAccepted: false,
-      allRulesOrderEditingEnabled: true,
       cnIpNoResolve: false,
       experimentalCnUseCnRuleSet: true,
       dialerProxyGroups: config.dialerProxyGroups,
@@ -173,7 +193,6 @@ describe("createTemplateActions", () => {
           name: "Existing",
           emoji: "",
           groupType: "select",
-          rules: [],
         },
       ],
       filteredProxyGroups: [
@@ -188,8 +207,8 @@ describe("createTemplateActions", () => {
         },
       ],
       customRules: [{ id: "existing-rule", type: "DOMAIN", value: "example.org", target: "Proxy" }],
-      moduleRuleOverrides: { ai: [{ id: "openai", name: "OpenAI", behavior: "domain", path: "geosite/openai.mrs" }] },
-      moduleRuleExclusions: { ai: ["openai"] },
+      customRuleSets: [{ id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 AI 服务" }],
+      builtinRuleEdits: { "module:ai:openai": { enabled: false } },
       ruleOrder: ["module:ai:openai"],
       cnIpNoResolve: true,
       experimentalCnUseCnRuleSet: false,
@@ -239,7 +258,6 @@ describe("createTemplateActions", () => {
           name: "Existing",
           emoji: "",
           groupType: "select",
-          rules: [],
         },
       ],
       filteredProxyGroups: [
@@ -254,10 +272,9 @@ describe("createTemplateActions", () => {
         },
       ],
       customRules: [{ id: "existing-rule", type: "DOMAIN", value: "example.org", target: "Proxy" }],
-      moduleRuleOverrides: { ai: [{ id: "openai", name: "OpenAI", behavior: "domain", path: "geosite/openai.mrs" }] },
-      moduleRuleExclusions: { ai: ["openai"] },
+      customRuleSets: [{ id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 AI 服务" }],
+      builtinRuleEdits: { "module:ai:openai": { enabled: false } },
       ruleOrder: ["module:ai:openai"],
-      allRulesOrderEditingEnabled: true,
       cnIpNoResolve: true,
       experimentalCnUseCnRuleSet: false,
       dialerProxyGroups: [{ id: "existing-dialer", name: "Existing Dialer", relayNodes: [], type: "select", targetNodes: [] }],
