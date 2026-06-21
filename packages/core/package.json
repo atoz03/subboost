@@ -11,6 +11,7 @@
     "./filtered-proxy-groups": "./src/filtered-proxy-groups.ts",
     "./generator": "./src/generator/index.ts",
     "./generator/*": "./src/generator/*",
+    "./generator/yaml-semantics": "./src/generator/yaml-semantics.ts",
     "./json": "./src/json.ts",
     "./mihomo/*": "./src/mihomo/*",
     "./node-name-template": "./src/node-name-template.ts",
