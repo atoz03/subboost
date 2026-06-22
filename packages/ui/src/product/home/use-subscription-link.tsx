@@ -12,7 +12,6 @@ import type { BuiltinRuleEdits, CustomRule, CustomProxyGroup, CustomRuleSet } fr
 import type { User } from "@subboost/ui/store/user-store";
 import { useConfigStore } from "@subboost/ui/store/config-store";
 import { captureAuthConfigHandoff } from "@subboost/ui/store/config-store/auth-handoff";
-import type { FilteredProxyGroup } from "@subboost/core/types/filtered-proxy-group";
 import {
   hasSubscriptionUserInfo,
   mergeSubscriptionUserInfo,
@@ -382,7 +381,7 @@ export function useSubscriptionLink({
             customProxyGroups,
             customRuleSets,
             builtinRuleEdits,
-            filteredProxyGroups: useConfigStore.getState().filteredProxyGroups as FilteredProxyGroup[],
+            proxyGroupAdvanced: useConfigStore.getState().proxyGroupAdvanced,
             moduleRuleEditWarningAccepted,
             dialerProxyGroups,
             proxyGroupNameOverrides,

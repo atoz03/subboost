@@ -41,7 +41,7 @@ describe("validateSubBoostTemplateConfig field validation", () => {
             {
               id: "relay",
               name: "Relay",
-              type: "fallback" as never,
+              type: "bad" as never,
               relayNodes: [],
               targetNodes: [],
             },
@@ -49,6 +49,24 @@ describe("validateSubBoostTemplateConfig field validation", () => {
         })
       )
     ).toEqual({ ok: false, error: "dialerProxyGroups.type 无效" });
+    const validDialerGroupType = validateSubBoostTemplateConfig(
+      validConfig({
+        dialerProxyGroups: [
+          {
+            id: "relay",
+            name: "Relay",
+            type: "load-balance",
+            strategy: "round-robin",
+            relayNodes: ["Relay A"],
+            targetNodes: ["Target A"],
+          },
+        ],
+      })
+    );
+    expect(validDialerGroupType.ok && validDialerGroupType.config.dialerProxyGroups[0]).toMatchObject({
+      type: "load-balance",
+      strategy: "round-robin",
+    });
     expectInvalid(
       {
         dialerProxyGroups: [

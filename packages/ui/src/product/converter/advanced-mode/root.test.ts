@@ -40,7 +40,6 @@ vi.mock("@subboost/ui/store/config-store", () => ({
 
 vi.mock("./sections/input-section", () => ({ InputSection: section("input") }));
 vi.mock("./sections/node-management-section", () => ({ NodeManagementSection: section("filter") }));
-vi.mock("./sections/filtered-proxy-groups-section", () => ({ FilteredProxyGroupsSection: section("filtered") }));
 vi.mock("./sections/dialer-proxy-groups-section", () => ({ DialerProxyGroupsSection: section("chain") }));
 vi.mock("./sections/proxy-groups-section", () => ({ ProxyGroupsSection: section("proxy") }));
 vi.mock("./sections/rules-management-section", () => ({ RulesManagementSection: section("rules") }));
@@ -63,7 +62,6 @@ describe("AdvancedMode", () => {
       "chain",
       "dns",
       "filter",
-      "filtered",
       "input",
       "proxy",
       "rules",

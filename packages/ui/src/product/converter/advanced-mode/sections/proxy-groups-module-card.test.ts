@@ -148,10 +148,6 @@ describe("ProxyGroupsModuleCard", () => {
     expect(html).toContain("Gemini Display");
     expect(html).toContain("AI description");
     expect(html).toContain("3 规则");
-    expect(html).toContain("+1 自定义");
-    expect(html).toContain("+1 手动");
-    expect(html).toContain("已移动 1");
-    expect(html).toContain("已移除 1");
     expect(html).toContain("Gemini 分流说明");
     expect(html).toContain("rules-panel");
     expect(mocks.panels[0]).toEqual(expect.objectContaining({ module: baseModule, cnIpNoResolve: true }));

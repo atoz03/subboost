@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   generateProxyGroups,
   generateRuleProviders,
+  generateRules,
   getAllGroupNames,
   getGroupTarget,
   getModulesForTemplate,
@@ -31,7 +32,7 @@ function customGroup(id: string, groupType: CustomProxyGroup["groupType"]): Cust
 }
 
 describe("proxy group generator", () => {
-  it("generates module, filtered, custom, and provider-backed groups", () => {
+  it("generates module, custom, advanced-filtered, and provider-backed groups", () => {
     const groups = generateProxyGroups({
       nodes: [node("Node A"), node("Node B")],
       proxyProviderNames: ["remote"],
@@ -39,48 +40,22 @@ describe("proxy group generator", () => {
       ruleProviderBaseUrl: "https://rules.example.com",
       testUrl: "https://probe.example.com/204",
       testInterval: 120,
-      filteredProxyGroups: [
-        {
-          id: "fast",
-          name: "US Fast",
-          enabled: true,
-          groupType: "load-balance",
-          strategy: "round-robin",
-          sourceIds: [],
-          regions: [],
-          includeRegex: "Node A",
-        },
-        {
-          id: "reject",
-          name: "Reject Filter",
-          enabled: true,
-          groupType: "reject-first",
-          sourceIds: [],
-          regions: [],
-          excludedNodeNames: ["Node B"],
-        },
-      ],
       customProxyGroups: [
         customGroup("select", "select"),
         customGroup("url", "url-test"),
         customGroup("fallback", "fallback"),
-        customGroup("balance", "load-balance"),
+        {
+          ...customGroup("balance", "load-balance"),
+          advanced: { includeRegex: "Node A" },
+        },
         customGroup("direct", "direct-first"),
-        customGroup("reject", "reject-first"),
+        {
+          ...customGroup("reject", "reject-first"),
+          advanced: { excludedMembers: [{ kind: "node", name: "Node B" }] },
+        },
       ],
     });
 
-    expect(groups.find((group) => group.name === "US Fast")).toMatchObject({
-      type: "load-balance",
-      proxies: ["Node A"],
-      strategy: "round-robin",
-      url: "https://probe.example.com/204",
-      interval: 120,
-    });
-    expect(groups.find((group) => group.name === "Reject Filter")).toMatchObject({
-      type: "select",
-      proxies: ["REJECT", "DIRECT", "Node A"],
-    });
     expect(groups.find((group) => group.name === "Custom url")).toMatchObject({
       type: "url-test",
       use: ["remote"],
@@ -89,10 +64,15 @@ describe("proxy group generator", () => {
     expect(groups.find((group) => group.name === "Custom fallback")).toMatchObject({ type: "fallback" });
     expect(groups.find((group) => group.name === "Custom balance")).toMatchObject({
       type: "load-balance",
+      proxies: ["Node A"],
       strategy: "round-robin",
+      url: "https://probe.example.com/204",
+      interval: 120,
     });
     expect(groups.find((group) => group.name === "Custom direct")?.proxies?.[0]).toBe("DIRECT");
-    expect(groups.find((group) => group.name === "Custom reject")?.proxies?.[0]).toBe("REJECT");
+    const rejectProxies = groups.find((group) => group.name === "Custom reject")?.proxies ?? [];
+    expect(rejectProxies.slice(0, 2)).toEqual(["REJECT", "DIRECT"]);
+    expect(rejectProxies).not.toContain("Node B");
     expect(groups.find((group) => group.name.includes("节点选择"))).toMatchObject({
       type: "select",
       use: ["remote"],
@@ -135,5 +115,86 @@ describe("proxy group generator", () => {
     expect(getModulesForTemplate("full")).not.toContain("adult");
     expect(getGroupTarget("missing")).toContain("节点选择");
     expect(getAllGroupNames(["select"], [customGroup("custom", "select")])).toContain("Custom custom");
+  });
+
+  it("applies built-in group type overrides and explicitly added members", () => {
+    const groups = generateProxyGroups({
+      nodes: [node("Node A"), node("Node B")],
+      enabledModules: ["select", "auto", "ai"],
+      ruleProviderBaseUrl: "https://rules.example.com",
+      testUrl: "https://probe.example.com/204",
+      testInterval: 120,
+      proxyGroupAdvanced: {
+        ai: {
+          groupType: "fallback",
+          extraMembers: [{ kind: "direct" }],
+          memberOrder: [{ kind: "direct" }, { kind: "node", name: "Node B" }],
+        },
+      },
+    });
+
+    expect(groups.find((group) => group.name.includes("AI"))).toMatchObject({
+      type: "fallback",
+      proxies: ["DIRECT", "Node B", "Node A"],
+      url: "https://probe.example.com/204",
+      interval: 120,
+    });
+  });
+
+  it("omits disabled custom groups from groups, providers, names, and custom rules", () => {
+    const disabledGroup = { ...customGroup("disabled", "select"), enabled: false };
+    const groups = generateProxyGroups({
+      nodes: [node("Node A")],
+      enabledModules: ["select"],
+      ruleProviderBaseUrl: "https://rules.example.com",
+      testUrl: "https://probe.example.com/204",
+      testInterval: 120,
+      customProxyGroups: [disabledGroup],
+    });
+    const providers = generateRuleProviders({
+      nodes: [node("Node A")],
+      enabledModules: [],
+      ruleProviderBaseUrl: "https://rules.example.com",
+      testUrl: "https://probe.example.com/204",
+      testInterval: 120,
+      customProxyGroups: [disabledGroup],
+      customRuleSets: [
+        {
+          id: "disabled-rule",
+          name: "Disabled rule",
+          behavior: "domain",
+          path: "geosite/disabled.mrs",
+          target: { kind: "custom", id: "disabled" },
+        },
+      ],
+    });
+    const rules = generateRules({
+      enabledModules: [],
+      customRules: [
+        {
+          id: "disabled-manual",
+          type: "DOMAIN",
+          value: "disabled.example",
+          target: { kind: "custom", id: "disabled" },
+        },
+      ],
+      customRuleSets: [
+        {
+          id: "disabled-rule",
+          name: "Disabled rule",
+          behavior: "domain",
+          path: "geosite/disabled.mrs",
+          target: { kind: "custom", id: "disabled" },
+        },
+      ],
+      customProxyGroups: [disabledGroup],
+      availablePolicyTargets: ["DIRECT"],
+      fallbackPolicyTarget: "DIRECT",
+    });
+
+    expect(groups.some((group) => group.name === "Custom disabled")).toBe(false);
+    expect(getAllGroupNames(["select"], [disabledGroup])).not.toContain("Custom disabled");
+    expect(providers["disabled-rule"]).toBeUndefined();
+    expect(rules).toEqual(["MATCH,DIRECT"]);
   });
 });

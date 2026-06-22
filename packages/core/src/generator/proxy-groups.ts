@@ -5,9 +5,17 @@
 
 import type { ParsedNode } from "@subboost/core/types/node";
 import { DEFAULT_LOAD_BALANCE_STRATEGY } from "@subboost/core/types/config";
-import type { BuiltinRuleEdits, CustomProxyGroup, CustomRuleSet, ProxyGroup, RuleProvider } from "@subboost/core/types/config";
-import type { FilteredProxyGroup } from "@subboost/core/types/filtered-proxy-group";
-import { getFilteredProxyGroupProxies } from "@subboost/core/filtered-proxy-groups";
+import type {
+  BuiltinRuleEdits,
+  CustomProxyGroup,
+  CustomRuleSet,
+  LoadBalanceStrategy,
+  ProxyGroup,
+  ProxyGroupAdvancedConfig,
+  ProxyGroupGroupType,
+  RuleProvider,
+} from "@subboost/core/types/config";
+import { resolveProxyGroupMembers } from "@subboost/core/proxy-group-advanced";
 import { isSubscriptionInfoNodeName } from "@subboost/core/subscription/info-node-name";
 
 import { PROXY_GROUP_MODULES, type ProxyGroupModule, type ProxyGroupRule } from "./proxy-group-modules";
@@ -19,6 +27,7 @@ import {
 } from "./rules";
 import { getModuleRuleOrderKey } from "./module-rules";
 import { buildRuleSetUrlFromPath } from "@subboost/core/rules/rule-model";
+import { buildTypedProxyGroup } from "./proxy-group-type";
 
 export { PROXY_GROUP_MODULES };
 export type { ProxyGroupModule, ProxyGroupRule };
@@ -48,7 +57,7 @@ export interface GenerateOptions {
   testInterval: number;
   customProxyGroups?: CustomProxyGroup[];
   customRuleSets?: CustomRuleSet[];
-  filteredProxyGroups?: FilteredProxyGroup[];
+  proxyGroupAdvanced?: Record<string, ProxyGroupAdvancedConfig>;
   builtinRuleEdits?: BuiltinRuleEdits;
   // 国内服务 GeoIP 规则是否使用 no-resolve（默认 true；关闭可提升命中率但可能造成 DNS 泄露）
   cnIpNoResolve?: boolean;
@@ -59,6 +68,26 @@ export interface GenerateOptions {
 }
 
 export { isSubscriptionInfoNodeName };
+
+function getEnabledCustomProxyGroups(customProxyGroups: CustomProxyGroup[]): CustomProxyGroup[] {
+  return customProxyGroups.filter((group) => group && group.enabled !== false);
+}
+
+function customTargetIsDisabled(
+  target: CustomRuleSet["target"],
+  customProxyGroups: CustomProxyGroup[]
+): boolean {
+  const disabled = customProxyGroups.filter((group) => group && group.enabled === false);
+  if (disabled.length === 0) return false;
+  if (typeof target === "object" && target?.kind === "custom") {
+    return disabled.some((group) => group.id === target.id);
+  }
+  if (typeof target === "string") {
+    const name = target.trim();
+    return Boolean(name) && disabled.some((group) => group.name.trim() === name);
+  }
+  return false;
+}
 
 /**
  * 代理组显示顺序（在 Clash 客户端中的排列顺序）
@@ -101,9 +130,10 @@ export function generateProxyGroups(options: GenerateOptions): ProxyGroup[] {
     testUrl,
     testInterval,
     customProxyGroups = [],
-    filteredProxyGroups = [],
+    proxyGroupAdvanced = {},
     proxyGroupNameOverrides,
   } = options;
+  const activeCustomProxyGroups = getEnabledCustomProxyGroups(customProxyGroups);
   const providerUse = proxyProviderNames.length > 0 ? { use: proxyProviderNames } : {};
   const nodeNames = nodes.map((n) => n.name);
   // 业务组/测速组需要过滤掉“信息节点”，仅在 🚀 节点选择 中保留显示
@@ -118,13 +148,15 @@ export function generateProxyGroups(options: GenerateOptions): ProxyGroup[] {
   const enabledModuleTarget = (moduleId: string) =>
     enabledSet.has(moduleId) ? resolveModuleName(moduleId, proxyGroupNameOverrides) : null;
 
-  const enabledFilteredGroups = filteredProxyGroups
-    .filter((g) => g && g.enabled && typeof g.name === "string" && g.name.trim())
-    .map((g) => ({
-      ...g,
-      name: g.name.trim(),
-    }));
-  const filteredGroupNames = enabledFilteredGroups.map((g) => g.name);
+  const moduleNames = Object.fromEntries(
+    PROXY_GROUP_MODULES.map((module) => [
+      module.id,
+      resolveModuleNameFromModule(module, proxyGroupNameOverrides),
+    ])
+  );
+  const customGroupNames = activeCustomProxyGroups
+    .map((group) => (typeof group.name === "string" ? group.name.trim() : ""))
+    .filter(Boolean);
   const policyTargets = (...targets: unknown[]) => {
     const out: string[] = [];
     const seen = new Set<string>();
@@ -139,153 +171,188 @@ export function generateProxyGroups(options: GenerateOptions): ProxyGroup[] {
   const selectTarget = enabledModuleTarget("select");
   const autoTarget = enabledModuleTarget("auto");
   const baseProxies = selectTarget
-    ? fallbackTargets(selectTarget, autoTarget, "DIRECT", "REJECT", ...filteredGroupNames, ...filteredNodeNames)
-    : fallbackTargets(autoTarget, ...filteredGroupNames, ...filteredNodeNames, "DIRECT", "REJECT");
+    ? fallbackTargets(selectTarget, autoTarget, "DIRECT", "REJECT", ...customGroupNames, ...filteredNodeNames)
+    : fallbackTargets(autoTarget, ...customGroupNames, ...filteredNodeNames, "DIRECT", "REJECT");
+  const availableMemberProxyNames = fallbackTargets(
+    "DIRECT",
+    "REJECT",
+    autoTarget,
+    selectTarget,
+    ...filteredNodeNames,
+    ...PROXY_GROUP_MODULES.filter((module) => enabledSet.has(module.id)).map((module) => moduleNames[module.id]),
+    ...customGroupNames,
+  );
 
-  // 注意：筛选代理组会过滤掉“信息节点”，避免进入业务分流与测速池。
-  for (const g of enabledFilteredGroups) {
-    const groupType =
-      g.groupType === "url-test" ||
-      g.groupType === "fallback" ||
-      g.groupType === "load-balance" ||
-      g.groupType === "direct-first" ||
-      g.groupType === "reject-first"
-        ? g.groupType
-        : "select";
-
-    const proxies = getFilteredProxyGroupProxies(nodes, g).filter(
-      (name) => name === "DIRECT" || name === "REJECT" || !isSubscriptionInfoNodeName(name)
-    );
-    const nodeOnly = proxies.filter((name) => name !== "DIRECT" && name !== "REJECT");
-
-    if (groupType === "url-test" || groupType === "fallback" || groupType === "load-balance") {
-      groups.push({
-        name: g.name,
-        type: groupType,
-        proxies: nodeOnly,
-        url: testUrl,
-        interval: testInterval,
-        ...(groupType === "url-test" ? { lazy: false } : {}),
-        ...(groupType === "load-balance" ? { strategy: g.strategy ?? DEFAULT_LOAD_BALANCE_STRATEGY } : {}),
-      });
-      continue;
-    }
-
-    groups.push({
-      name: g.name,
-      type: "select",
-      proxies: groupType === "reject-first" ? ["REJECT", "DIRECT", ...nodeOnly] : proxies,
+  const resolveGroupProxyNames = (
+    defaultProxyNames: string[],
+    advanced: ProxyGroupAdvancedConfig | undefined,
+    self: { kind: "module" | "custom"; id: string; name: string }
+  ) =>
+    resolveProxyGroupMembers({
+      defaultProxyNames,
+      availableProxyNames: availableMemberProxyNames,
+      nodes,
+      moduleNames,
+      customProxyGroups: activeCustomProxyGroups,
+      advanced,
+      self,
+    }).proxyNames;
+  const createGeneratedProxyGroup = (
+    name: string,
+    groupType: ProxyGroupGroupType,
+    proxies: string[],
+    strategy?: LoadBalanceStrategy
+  ): ProxyGroup =>
+    buildTypedProxyGroup({
+      name,
+      groupType,
+      proxies,
+      testUrl,
+      testInterval,
+      strategy,
+      extraFields: providerUse,
+      urlTestLazy: false,
     });
-  }
 
   // 辅助函数：生成单个代理组
   const generateGroup = (module: ProxyGroupModule) => {
     const moduleName = resolveModuleNameFromModule(module, proxyGroupNameOverrides);
-    switch (module.groupType) {
+    const advanced = proxyGroupAdvanced[module.id];
+    const groupType: ProxyGroupGroupType = advanced?.groupType ?? module.groupType;
+    switch (groupType) {
       case "select":
         if (module.id === "select") {
+          const defaultProxies = fallbackTargets(autoTarget, "DIRECT", "REJECT", ...customGroupNames, ...nodeNames);
           groups.push({
             name: moduleName,
             type: "select",
             // “节点选择”组本身不应包含自己；默认先走“⚡ 自动选择”更符合开箱即用
-            proxies: fallbackTargets(autoTarget, "DIRECT", "REJECT", ...filteredGroupNames, ...nodeNames),
+            proxies: resolveGroupProxyNames(defaultProxies, advanced, {
+              kind: "module",
+              id: module.id,
+              name: moduleName,
+            }),
             ...providerUse,
           });
         } else {
+          const defaultProxies = baseProxies.filter((target) => target !== moduleName);
           groups.push({
             name: moduleName,
             type: "select",
-            proxies: baseProxies.filter((target) => target !== moduleName),
+            proxies: resolveGroupProxyNames(defaultProxies, advanced, {
+              kind: "module",
+              id: module.id,
+              name: moduleName,
+            }),
             ...providerUse,
           });
         }
         break;
 
       case "url-test":
-        groups.push({
-          name: moduleName,
-          type: "url-test",
-          proxies: filteredNodeNames,
-          ...providerUse,
-          url: testUrl,
-          interval: testInterval,
-          lazy: false,
-        });
+          groups.push(createGeneratedProxyGroup(
+            moduleName,
+            groupType,
+            resolveGroupProxyNames(filteredNodeNames, advanced, {
+              kind: "module",
+              id: module.id,
+              name: moduleName,
+            }),
+          ));
         break;
 
       case "fallback":
-        groups.push({
-          name: moduleName,
-          type: "fallback",
-          proxies: filteredNodeNames,
-          ...providerUse,
-          url: testUrl,
-          interval: testInterval,
-        });
+        groups.push(createGeneratedProxyGroup(
+          moduleName,
+          groupType,
+          resolveGroupProxyNames(filteredNodeNames, advanced, {
+            kind: "module",
+            id: module.id,
+            name: moduleName,
+          }),
+        ));
+        break;
+
+      case "load-balance":
+        groups.push(createGeneratedProxyGroup(
+          moduleName,
+          groupType,
+          resolveGroupProxyNames(filteredNodeNames, advanced, {
+            kind: "module",
+            id: module.id,
+            name: moduleName,
+          }),
+          advanced?.strategy ?? DEFAULT_LOAD_BALANCE_STRATEGY,
+        ));
         break;
 
       case "reject-first":
-        groups.push({
-          name: moduleName,
-          type: "select",
-          proxies: fallbackTargets("REJECT", "DIRECT", selectTarget).filter((target) => target !== moduleName),
-          ...providerUse,
-        });
+        {
+          const defaultProxies = fallbackTargets("REJECT", "DIRECT", selectTarget).filter((target) => target !== moduleName);
+          groups.push({
+            name: moduleName,
+            type: "select",
+            proxies: resolveGroupProxyNames(defaultProxies, advanced, {
+              kind: "module",
+              id: module.id,
+              name: moduleName,
+            }),
+            ...providerUse,
+          });
+        }
         break;
 
       case "direct-first":
-        groups.push({
-          name: moduleName,
-          type: "select",
-          // 私有网络/国内服务：默认 DIRECT，但也提供自动选择
-          proxies: fallbackTargets("DIRECT", "REJECT", ...filteredGroupNames, selectTarget, autoTarget, ...filteredNodeNames).filter(
+        {
+          const defaultProxies = fallbackTargets("DIRECT", "REJECT", selectTarget, autoTarget, ...customGroupNames, ...filteredNodeNames).filter(
             (target) => target !== moduleName
-          ),
-          ...providerUse,
-        });
+          );
+          groups.push({
+            name: moduleName,
+            type: "select",
+            // 私有网络/国内服务：默认 DIRECT，但也提供自动选择
+            proxies: resolveGroupProxyNames(defaultProxies, advanced, {
+              kind: "module",
+              id: module.id,
+              name: moduleName,
+            }),
+            ...providerUse,
+          });
+        }
         break;
     }
   };
 
   const createCustomProxyGroup = (customGroup: CustomProxyGroup): ProxyGroup => {
-    if (customGroup.groupType === "url-test") {
-      return {
+    const resolveCustom = (defaultProxyNames: string[]) =>
+      resolveGroupProxyNames(defaultProxyNames, customGroup.advanced, {
+        kind: "custom",
+        id: customGroup.id,
         name: customGroup.name,
-        type: "url-test",
-        proxies: filteredNodeNames,
-        ...providerUse,
-        url: testUrl,
-        interval: testInterval,
-        lazy: false,
-      };
+      });
+
+    if (customGroup.groupType === "url-test") {
+      return createGeneratedProxyGroup(customGroup.name, customGroup.groupType, resolveCustom(filteredNodeNames));
     }
     if (customGroup.groupType === "fallback") {
-      return {
-        name: customGroup.name,
-        type: "fallback",
-        proxies: filteredNodeNames,
-        ...providerUse,
-        url: testUrl,
-        interval: testInterval,
-      };
+      return createGeneratedProxyGroup(customGroup.name, customGroup.groupType, resolveCustom(filteredNodeNames));
     }
     if (customGroup.groupType === "load-balance") {
-      return {
-        name: customGroup.name,
-        type: "load-balance",
-        proxies: filteredNodeNames,
-        ...providerUse,
-        url: testUrl,
-        interval: testInterval,
-        strategy: customGroup.strategy ?? DEFAULT_LOAD_BALANCE_STRATEGY,
-      };
+      return createGeneratedProxyGroup(
+        customGroup.name,
+        customGroup.groupType,
+        resolveCustom(filteredNodeNames),
+        customGroup.strategy ?? DEFAULT_LOAD_BALANCE_STRATEGY
+      );
     }
     if (customGroup.groupType === "direct-first") {
       return {
         name: customGroup.name,
         type: "select",
-        proxies: fallbackTargets("DIRECT", "REJECT", selectTarget, autoTarget, ...filteredNodeNames).filter(
-          (target) => target !== customGroup.name
+        proxies: resolveCustom(
+          fallbackTargets("DIRECT", "REJECT", selectTarget, autoTarget, ...customGroupNames, ...filteredNodeNames).filter(
+            (target) => target !== customGroup.name
+          )
         ),
         ...providerUse,
       };
@@ -294,14 +361,18 @@ export function generateProxyGroups(options: GenerateOptions): ProxyGroup[] {
       return {
         name: customGroup.name,
         type: "select",
-        proxies: fallbackTargets("REJECT", "DIRECT", selectTarget).filter((target) => target !== customGroup.name),
+        proxies: resolveCustom(
+          fallbackTargets("REJECT", "DIRECT", selectTarget, ...customGroupNames).filter(
+            (target) => target !== customGroup.name
+          )
+        ),
         ...providerUse,
       };
     }
     return {
       name: customGroup.name,
       type: "select",
-      proxies: baseProxies.filter((target) => target !== customGroup.name),
+      proxies: resolveCustom(baseProxies.filter((target) => target !== customGroup.name)),
       ...providerUse,
     };
   };
@@ -310,9 +381,9 @@ export function generateProxyGroups(options: GenerateOptions): ProxyGroup[] {
   let insertedCustom = false;
   for (const moduleId of PROXY_GROUP_ORDER) {
     // 自定义分流组插入位置：在 🍏 苹果服务 与 📲 电报消息之间
-    if (!insertedCustom && moduleId === "ai" && customProxyGroups.length > 0) {
+    if (!insertedCustom && moduleId === "ai" && activeCustomProxyGroups.length > 0) {
       insertedCustom = true;
-      for (const customGroup of customProxyGroups) {
+      for (const customGroup of activeCustomProxyGroups) {
         groups.push(createCustomProxyGroup(customGroup));
       }
     }
@@ -335,8 +406,8 @@ export function generateProxyGroups(options: GenerateOptions): ProxyGroup[] {
   }
 
   // 若未命中插入点（例如未来移除 private），则追加到末尾
-  if (!insertedCustom && customProxyGroups.length > 0) {
-    for (const customGroup of customProxyGroups) {
+  if (!insertedCustom && activeCustomProxyGroups.length > 0) {
+    for (const customGroup of activeCustomProxyGroups) {
       groups.push(createCustomProxyGroup(customGroup));
     }
   }
@@ -353,6 +424,7 @@ export function generateRuleProviders(options: GenerateOptions): Record<string, 
     ruleProviderBaseUrl,
     customRuleSets = [],
     builtinRuleEdits,
+    customProxyGroups = [],
   } = options;
   const providers: Record<string, RuleProvider> = {};
   const enabledSet = new Set(enabledModules);
@@ -388,6 +460,7 @@ export function generateRuleProviders(options: GenerateOptions): Record<string, 
 
   // 用户新增规则集统一由 customRuleSets 提供，不再挂在某个分流组对象上。
   for (const ruleSet of customRuleSets) {
+    if (customTargetIsDisabled(ruleSet.target, customProxyGroups)) continue;
     if (!ruleSet?.id || !ruleSet.path || providers[ruleSet.id]) continue;
     providers[ruleSet.id] = {
       type: "http",
@@ -432,7 +505,7 @@ export function getAllGroupNames(enabledModules: string[], customProxyGroups: Cu
     .map(m => m.name);
   
   // 添加自定义代理组
-  for (const group of customProxyGroups) {
+  for (const group of getEnabledCustomProxyGroups(customProxyGroups)) {
     names.push(group.name);
   }
   

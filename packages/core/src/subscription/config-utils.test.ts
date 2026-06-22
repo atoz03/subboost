@@ -61,7 +61,8 @@ describe("subscription config utils", () => {
           {
             id: "chain",
             name: "Chain",
-            type: "url-test",
+            type: "load-balance",
+            strategy: "round-robin",
             enabled: true,
             relayNodes: [" Relay ", ""],
             targetNodes: [" Target "],
@@ -130,6 +131,19 @@ describe("subscription config utils", () => {
       id: "media",
       strategy: "consistent-hashing",
     });
+    expect(options.customProxyGroups?.[1]).toMatchObject({
+      id: "migrated-filtered-filtered",
+      name: "Filtered",
+      groupType: "load-balance",
+      strategy: "round-robin",
+      advanced: {
+        sourceIds: ["airport"],
+        regions: ["us"],
+        includeRegex: "Fast",
+        excludeRegex: "IPv6",
+        excludedMembers: [{ kind: "node", name: "Slow" }],
+      },
+    });
     expect(options.customRuleSets?.[0]).toMatchObject({
       id: "youtube",
       name: "YouTube",
@@ -138,16 +152,10 @@ describe("subscription config utils", () => {
     });
     expect(options.dialerProxyGroups?.[0]).toMatchObject({
       id: "chain",
+      type: "load-balance",
+      strategy: "round-robin",
       relayNodes: ["Relay"],
       targetNodes: ["Target"],
-    });
-    expect(options.filteredProxyGroups?.[0]).toMatchObject({
-      id: "filtered",
-      strategy: "round-robin",
-      regions: ["us"],
-      includeRegex: "Fast",
-      excludeRegex: "IPv6",
-      excludedNodeNames: ["Slow"],
     });
     expect(options.proxyGroupNameOverrides).toEqual({ auto: "Auto" });
     expect(options.proxyGroupOrder).toEqual(["auto"]);
@@ -178,7 +186,7 @@ describe("subscription config utils", () => {
           { id: "bad-behavior", name: "Bad", behavior: "bad", path: "geosite/bad.mrs", target: "Fallback" },
           { id: "bad-path", name: "Bad", behavior: "domain", path: "plain.txt", target: "Fallback" },
         ],
-        dialerProxyGroups: ["bad", { id: "bad", name: "Bad", type: "fallback" }],
+        dialerProxyGroups: ["bad", { id: "bad", name: "Bad", type: "bad" }],
         filteredProxyGroups: [
           "bad",
           { id: "", name: "Bad", enabled: true },
@@ -220,13 +228,6 @@ describe("subscription config utils", () => {
       "direct-first",
       "reject-first",
     ]);
-    expect(options.filteredProxyGroups?.[0]).toMatchObject({
-      id: "select-default",
-      enabled: false,
-      groupType: "select",
-      regions: [],
-      emoji: "S",
-    });
     expect(options.dialerProxyGroups).toBeUndefined();
     expect(options.proxyGroupNameOverrides).toBeUndefined();
     expect(options.proxyGroupOrder).toBeUndefined();
@@ -252,13 +253,14 @@ describe("subscription config utils", () => {
 
     expect(minimal.template).toBe("minimal");
     expect(standard.template).toBe("standard");
-    expect(minimal.customProxyGroups?.map((group) => group.groupType)).toEqual(["select", "url-test"]);
-    expect(minimal.filteredProxyGroups?.map((group) => group.groupType)).toEqual([
+    expect(minimal.customProxyGroups?.map((group) => group.groupType)).toEqual([
+      "select",
+      "url-test",
       "fallback",
       "direct-first",
       "reject-first",
     ]);
-    expect(minimal.filteredProxyGroups?.[0].sourceIds).toEqual(["airport"]);
-    expect(minimal.filteredProxyGroups?.[1].regions).toEqual(["hk", "other"]);
+    expect(minimal.customProxyGroups?.[2].advanced?.sourceIds).toEqual(["airport"]);
+    expect(minimal.customProxyGroups?.[3].advanced?.regions).toEqual(["hk", "other"]);
   });
 });

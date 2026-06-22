@@ -150,16 +150,19 @@ describe("validateSubBoostTemplateConfig", () => {
         }),
       ])
     );
-    expect(result.config.filteredProxyGroups?.[0]).toMatchObject({
-      id: "filtered",
+    expect(result.config.customProxyGroups[1]).toMatchObject({
+      id: "migrated-filtered-filtered",
+      name: "Filtered",
       groupType: "load-balance",
       strategy: DEFAULT_LOAD_BALANCE_STRATEGY,
-      sourceIds: ["source-a"],
-      regions: ["us", "hk"],
-      excludedNodeNames: ["Node A"],
-      includeRegex: "US",
-      excludeRegex: "IPv6",
       emoji: "F",
+      advanced: {
+        sourceIds: ["source-a"],
+        regions: ["us", "hk"],
+        excludedMembers: [{ kind: "node", name: "Node A" }],
+        includeRegex: "US",
+        excludeRegex: "IPv6",
+      },
     });
     expect(result.config.customRules[0]).toMatchObject({
       id: "custom-rule-a",

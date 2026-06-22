@@ -363,7 +363,7 @@ describe("generateClashConfig", () => {
     });
   });
 
-  it("applies persisted proxy group order across dialer, filtered, custom, and module groups", () => {
+  it("applies persisted proxy group order across dialer, custom, and module groups", () => {
     const config = generateClashConfig({
       nodes: [ssNode({ name: "Relay" }), ssNode({ name: "Target", server: "target.example.com" })],
       dialerProxyGroups: [
@@ -375,16 +375,6 @@ describe("generateClashConfig", () => {
           targetNodes: ["Target"],
         },
       ],
-      filteredProxyGroups: [
-        {
-          id: "fast",
-          name: "Fast",
-          enabled: true,
-          groupType: "select",
-          sourceIds: [],
-          regions: [],
-        },
-      ],
       customProxyGroups: [
         {
           id: "custom",
@@ -393,7 +383,7 @@ describe("generateClashConfig", () => {
           groupType: "select",
         },
       ],
-      proxyGroupOrder: ["filtered:fast", "custom:custom", "dialer:chain", "module:auto", "missing", "module:auto"],
+      proxyGroupOrder: ["custom:custom", "dialer:chain", "module:auto", "missing", "module:auto"],
       userConfig: {
         dnsYaml: "",
         enabledGroups: ["select", "auto", "global", "final"],
@@ -401,10 +391,10 @@ describe("generateClashConfig", () => {
     });
 
     expect(config["proxy-groups"]?.slice(0, 4).map((group) => group.name)).toEqual([
-      "Fast",
       "Custom",
       "Chain",
       "⚡ 自动选择",
+      "🚀 节点选择",
     ]);
   });
 
@@ -445,16 +435,6 @@ describe("generateClashConfig", () => {
   it("uses default base config when base YAML is omitted and skips malformed ordered group names", () => {
     const config = generateClashConfig({
       nodes: [ssNode()],
-      filteredProxyGroups: [
-        {
-          id: "bad-filter",
-          name: 123 as never,
-          enabled: true,
-          groupType: "select",
-          sourceIds: [],
-          regions: [],
-        },
-      ],
       customProxyGroups: [
         {
           id: "bad-custom",
@@ -463,7 +443,7 @@ describe("generateClashConfig", () => {
           groupType: "select",
         },
       ],
-      proxyGroupOrder: ["filtered:bad-filter", "custom:bad-custom", "module:auto"],
+      proxyGroupOrder: ["custom:bad-custom", "module:auto"],
       userConfig: {
         enabledGroups: ["select", "auto", "global", "final"],
       },

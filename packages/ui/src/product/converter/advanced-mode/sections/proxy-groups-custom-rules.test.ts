@@ -211,12 +211,6 @@ describe("ProxyGroupsCustomRules", () => {
       removeCustomRule: vi.fn(),
       enabledProxyGroups: ["auto"],
       customProxyGroups: [{ id: "custom-1", name: "Custom Group", rules: [] }],
-      filteredProxyGroups: [
-        { name: " Filter Group ", enabled: true },
-        { name: "Disabled", enabled: false },
-        { name: "   ", enabled: true },
-        { name: 123, enabled: true },
-      ],
       proxyGroupNameOverrides: { auto: "节点选择" },
     };
   });
@@ -278,7 +272,6 @@ describe("ProxyGroupsCustomRules", () => {
           "REJECT",
           "节点选择",
           "Custom Group",
-          "Filter Group",
           "Legacy Target",
         ],
         existingRules: [],
@@ -452,7 +445,6 @@ describe("ProxyGroupsCustomRules", () => {
       "REJECT",
       "节点选择",
       "Custom Group",
-      "Filter Group",
     ]);
 
     const stale = renderRules(

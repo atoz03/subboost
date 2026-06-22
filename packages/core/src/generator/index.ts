@@ -27,11 +27,11 @@ import type {
   CustomProxyGroup,
   CustomRuleSet,
   ProxyGroup,
+  ProxyGroupAdvancedConfig,
   TemplateType,
   UserConfig,
 } from "@subboost/core/types/config";
 import type { DialerProxyGroup } from "@subboost/core/types/template-config";
-import type { FilteredProxyGroup } from "@subboost/core/types/filtered-proxy-group";
 import { collectDnsPolicyEntries, configToYaml } from "./yaml";
 import { isMihomoSupportedProxyNode, normalizeMihomoVlessForGeneration } from "@subboost/core/mihomo/proxy-sanitizer";
 import { chooseFallbackPolicyTarget, withBuiltinPolicyTargets } from "./policy-targets";
@@ -44,7 +44,7 @@ export interface GenerateOptions {
   dialerProxyGroups?: DialerProxyGroup[];
   customProxyGroups?: CustomProxyGroup[];
   customRuleSets?: CustomRuleSet[];
-  filteredProxyGroups?: FilteredProxyGroup[];
+  proxyGroupAdvanced?: Record<string, ProxyGroupAdvancedConfig>;
   builtinRuleEdits?: BuiltinRuleEdits;
   proxyGroupNameOverrides?: Record<string, string>;
   proxyGroupOrder?: string[];
@@ -184,7 +184,7 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     dialerProxyGroups = [],
     customProxyGroups = [],
     customRuleSets = [],
-    filteredProxyGroups = [],
+    proxyGroupAdvanced = {},
     builtinRuleEdits,
     proxyGroupNameOverrides,
   } = options;
@@ -265,18 +265,20 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
   };
 
   const nodeNameSet = new Set(uniqueNodes.map((n) => n.name));
-  const filteredGroupNameSet = new Set<string>(
-    filteredProxyGroups.filter((g) => g && g.enabled && typeof g.name === "string" && g.name.trim()).map((g) => g.name.trim())
-  );
+  const activeCustomProxyGroups = customProxyGroups.filter((g) => g && g.enabled !== false);
   const customGroupNameSet = new Set<string>(
-    customProxyGroups.filter((g) => g && typeof g.name === "string" && g.name.trim()).map((g) => g.name.trim())
+    activeCustomProxyGroups.filter((g) => g && typeof g.name === "string" && g.name.trim()).map((g) => g.name.trim())
   );
   const moduleGroupNameSet = new Set<string>(
     PROXY_GROUP_MODULES.map((mod) => resolveProxyGroupModuleName(mod, proxyGroupNameOverrides?.[mod.id]))
   );
   const enabledDialerProxyGroups = dialerProxyGroups.filter((g) => g && g.enabled !== false);
   const sanitizedDialerProxyGroups = enabledDialerProxyGroups.length > 0
-    ? sanitizeDialerProxyGroups(enabledDialerProxyGroups, nodeNameSet, filteredGroupNameSet)
+    ? sanitizeDialerProxyGroups(
+        enabledDialerProxyGroups,
+        nodeNameSet,
+        new Set([...moduleGroupNameSet, ...customGroupNameSet])
+      )
     : [];
 
   // 应用 dialer-proxy 到目标节点（基于最终输出的唯一节点名）
@@ -288,7 +290,6 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     ...nodeNameSet,
     ...proxyProviderNames,
     ...moduleGroupNameSet,
-    ...filteredGroupNameSet,
     ...customGroupNameSet,
     ...sanitizedDialerProxyGroups.map((g) => g.name.trim()).filter(Boolean),
   ]);
@@ -337,7 +338,7 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     testInterval: config.testInterval,
     customProxyGroups,
     customRuleSets,
-    filteredProxyGroups,
+    proxyGroupAdvanced,
     builtinRuleEdits,
     cnIpNoResolve: config.cnIpNoResolve,
     experimentalCnUseCnRuleSet: config.experimentalCnUseCnRuleSet,
@@ -396,17 +397,10 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     }
 
     const customNameToKey = new Map<string, string>();
-    for (const g of customProxyGroups) {
+    for (const g of activeCustomProxyGroups) {
       const name = typeof g.name === "string" ? g.name.trim() : "";
       if (!name) continue;
       customNameToKey.set(name, `custom:${g.id}`);
-    }
-
-    const filteredNameToKey = new Map<string, string>();
-    for (const g of filteredProxyGroups) {
-      const name = typeof g.name === "string" ? g.name.trim() : "";
-      if (!name) continue;
-      filteredNameToKey.set(name, `filtered:${g.id}`);
     }
 
     const dialerNameToKey = new Map<string, string>();
@@ -419,7 +413,6 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     const getKeyByName = (name: string) => {
       return (
         dialerNameToKey.get(name) ||
-        filteredNameToKey.get(name) ||
         customNameToKey.get(name) ||
         moduleNameToKey.get(name) ||
         `name:${name}`

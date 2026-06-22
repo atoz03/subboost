@@ -1,6 +1,7 @@
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-groups";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
-import type { CustomProxyGroup, CustomRuleSet } from "@subboost/core/types/config";
+import { normalizeProxyGroupTargetRef } from "@subboost/core/proxy-group-targets";
+import type { CustomProxyGroup, CustomRuleSet, ProxyGroupRuleTarget } from "@subboost/core/types/config";
 import {
   buildRuleSetUrlFromPath,
   extractRuleSetPathFromUrl,
@@ -53,11 +54,36 @@ export function parseRuleSetTargetValue(
 export { buildRuleSetUrlFromPath, extractRuleSetPathFromUrl, normalizeRuleSetPathInput };
 
 function resolveRuleSetTarget(
-  targetName: string,
+  targetValue: ProxyGroupRuleTarget,
   customProxyGroups: CustomProxyGroup[],
   proxyGroupNameOverrides?: Record<string, string>
 ): CustomRoutingRuleSetTarget | null {
-  const target = targetName.trim();
+  const targetRef = normalizeProxyGroupTargetRef(targetValue);
+  if (targetRef?.kind === "module") {
+    const proxyModule = PROXY_GROUP_MODULES.find((module) => module.id === targetRef.id);
+    if (!proxyModule) return null;
+    const name = resolveProxyGroupModuleName(proxyModule, proxyGroupNameOverrides?.[proxyModule.id]);
+    return {
+      kind: "module",
+      id: proxyModule.id,
+      name,
+      value: getRuleSetTargetValue({ kind: "module", id: proxyModule.id }),
+    };
+  }
+  if (targetRef?.kind === "custom") {
+    const group = customProxyGroups.find((item) => item.id === targetRef.id);
+    if (!group) return null;
+    const name = group.name.trim();
+    if (!name) return null;
+    return {
+      kind: "custom",
+      id: group.id,
+      name,
+      value: getRuleSetTargetValue({ kind: "custom", id: group.id }),
+    };
+  }
+
+  const target = typeof targetValue === "string" ? targetValue.trim() : "";
   if (!target) return null;
 
   for (const proxyModule of PROXY_GROUP_MODULES) {
@@ -97,7 +123,11 @@ export function collectCustomRoutingRuleSets({
 
   for (const rule of customRuleSets || []) {
     if (!rule || !rule.id || !rule.path) continue;
-    const target = resolveRuleSetTarget(rule.target, customProxyGroups, proxyGroupNameOverrides);
+    const target = resolveRuleSetTarget(
+      rule.target,
+      customProxyGroups,
+      proxyGroupNameOverrides,
+    );
     if (!target) continue;
     items.push({
       key: `custom-rule-set:${rule.id}`,

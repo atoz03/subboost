@@ -286,6 +286,7 @@ describe("ProxyGroupsAddedRuleSets", () => {
     });
 
     expect(html).toContain("geosite/draft");
+    expect(html).toContain("Target");
     expect(html).not.toContain("geosite/draft.mrs");
     expect(html).toContain(RULE_EDIT_PRIMARY_FIELD_CLASS);
     expect(html).toContain(RULE_EDIT_TRAILING_CONTROLS_CLASS);
@@ -567,5 +568,6 @@ describe("ProxyGroupsAddedRuleSets", () => {
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "规则集已存在", variant: "warning" }),
     );
+
   });
 });

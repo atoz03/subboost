@@ -1,6 +1,8 @@
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-groups";
 import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
 import { ensureCustomRuleId, isCustomRuleType } from "@subboost/core/rules/custom-rule-utils";
+import { migrateFilteredProxyGroupsConfig } from "@subboost/core/migrations/filtered-proxy-groups";
+import { normalizeProxyGroupAdvancedConfig } from "@subboost/core/proxy-group-advanced";
 import {
   isValidRuleSetPathOrUrl,
   normalizeRuleModelFromConfig,
@@ -8,13 +10,14 @@ import {
 } from "@subboost/core/rules/rule-model";
 import {
   DEFAULT_LOAD_BALANCE_STRATEGY,
+  isProxyGroupGroupType,
   isLoadBalanceStrategy,
   type CustomProxyGroup,
   type CustomRule,
   type LoadBalanceStrategy,
+  type ProxyGroupGroupType,
   type TemplateType,
 } from "@subboost/core/types/config";
-import type { FilteredProxyGroup, FilteredProxyGroupType, NodeRegion } from "@subboost/core/types/filtered-proxy-group";
 import type { DialerProxyGroup, SubBoostTemplateConfig } from "@subboost/core/types/template-config";
 
 export const SUBBOOST_TEMPLATE_CONFIG_SCHEMA = "subboost-template-config/v1";
@@ -27,15 +30,6 @@ const BUILTIN_MODULE_IDS = new Set(PROXY_GROUP_MODULES.map((module) => module.id
 const BUILTIN_RULE_KEYS = new Set(
   PROXY_GROUP_MODULES.flatMap((module) => module.rules.map((rule) => `module:${module.id}:${rule.id}`))
 );
-const FILTERED_GROUP_TYPES = new Set<FilteredProxyGroupType>([
-  "select",
-  "url-test",
-  "fallback",
-  "load-balance",
-  "direct-first",
-  "reject-first",
-]);
-const NODE_REGIONS = new Set<NodeRegion>(["us", "hk", "jp", "sg", "tw", "kr", "uk", "de", "fr", "ca", "au", "other"]);
 const REMOVED_TEMPLATE_FIELDS = new Set([
   "moduleRuleOverrides",
   "moduleRuleExclusions",
@@ -43,61 +37,62 @@ const REMOVED_TEMPLATE_FIELDS = new Set([
 ]);
 
 export function validateSubBoostTemplateConfig(value: unknown): ValidationResult {
-  if (!isRecord(value)) return invalid("模板配置必须是对象");
-  if (value.schema !== SUBBOOST_TEMPLATE_CONFIG_SCHEMA) {
+  const migratedValue = migrateFilteredProxyGroupsConfig(value);
+  if (!isRecord(migratedValue)) return invalid("模板配置必须是对象");
+  if (migratedValue.schema !== SUBBOOST_TEMPLATE_CONFIG_SCHEMA) {
     return invalid("模板配置 schema 无效");
   }
-  const removedField = findRemovedTemplateField(value);
+  const removedField = findRemovedTemplateField(migratedValue);
   if (removedField) return invalid(`模板配置包含已移除字段: ${removedField}`);
 
-  const template = parseTemplateType(value.template);
+  const template = parseTemplateType(migratedValue.template);
   if (!template) return invalid("模板类型无效");
 
-  const enabledProxyGroups = parseModuleIdArray(value.enabledProxyGroups, "enabledProxyGroups", { required: true });
+  const enabledProxyGroups = parseModuleIdArray(migratedValue.enabledProxyGroups, "enabledProxyGroups", { required: true });
   if (!enabledProxyGroups.ok) return enabledProxyGroups;
   if (enabledProxyGroups.value.length === 0) return invalid("至少需要一个代理组");
 
-  const hiddenProxyGroups = parseModuleIdArray(value.hiddenProxyGroups, "hiddenProxyGroups", { required: false });
+  const hiddenProxyGroups = parseModuleIdArray(migratedValue.hiddenProxyGroups, "hiddenProxyGroups", { required: false });
   if (!hiddenProxyGroups.ok) return hiddenProxyGroups;
   const hiddenSet = new Set(hiddenProxyGroups.value);
   if (enabledProxyGroups.value.every((id) => hiddenSet.has(id))) {
     return invalid("至少需要一个可见代理组");
   }
 
-  const customProxyGroups = parseCustomProxyGroups(value.customProxyGroups);
+  const customProxyGroups = parseCustomProxyGroups(migratedValue.customProxyGroups);
   if (!customProxyGroups.ok) return customProxyGroups;
-  const customRuleSets = parseCustomRuleSets(value.customRuleSets);
+  const proxyGroupAdvanced = parseProxyGroupAdvanced(migratedValue.proxyGroupAdvanced);
+  if (!proxyGroupAdvanced.ok) return proxyGroupAdvanced;
+  const customRuleSets = parseCustomRuleSets(migratedValue.customRuleSets);
   if (!customRuleSets.ok) return customRuleSets;
-  const builtinRuleEdits = parseBuiltinRuleEdits(value.builtinRuleEdits);
+  const builtinRuleEdits = parseBuiltinRuleEdits(migratedValue.builtinRuleEdits);
   if (!builtinRuleEdits.ok) return builtinRuleEdits;
-  const ruleModel = normalizeRuleModelFromConfig(value);
-  const filteredProxyGroups = parseFilteredProxyGroups(value.filteredProxyGroups);
-  if (!filteredProxyGroups.ok) return filteredProxyGroups;
-  const customRules = parseCustomRules(value.customRules);
+  const ruleModel = normalizeRuleModelFromConfig(migratedValue);
+  const customRules = parseCustomRules(migratedValue.customRules);
   if (!customRules.ok) return customRules;
-  const dialerProxyGroups = parseDialerProxyGroups(value.dialerProxyGroups);
+  const dialerProxyGroups = parseDialerProxyGroups(migratedValue.dialerProxyGroups);
   if (!dialerProxyGroups.ok) return dialerProxyGroups;
-  const proxyGroupNameOverrides = parseStringRecord(value.proxyGroupNameOverrides, "proxyGroupNameOverrides");
+  const proxyGroupNameOverrides = parseStringRecord(migratedValue.proxyGroupNameOverrides, "proxyGroupNameOverrides");
   if (!proxyGroupNameOverrides.ok) return proxyGroupNameOverrides;
-  const ruleOrder = parseOptionalStringArray(value.ruleOrder, "ruleOrder");
+  const ruleOrder = parseOptionalStringArray(migratedValue.ruleOrder, "ruleOrder");
   if (!ruleOrder.ok) return ruleOrder;
 
-  const dnsYaml = parseRequiredString(value.dnsYaml, "dnsYaml", { allowEmpty: true });
+  const dnsYaml = parseRequiredString(migratedValue.dnsYaml, "dnsYaml", { allowEmpty: true });
   if (!dnsYaml.ok) return dnsYaml;
-  const mixedPort = parsePort(value.mixedPort, "mixedPort");
+  const mixedPort = parsePort(migratedValue.mixedPort, "mixedPort");
   if (!mixedPort.ok) return mixedPort;
-  const allowLan = parseBoolean(value.allowLan, "allowLan");
+  const allowLan = parseBoolean(migratedValue.allowLan, "allowLan");
   if (!allowLan.ok) return allowLan;
-  const testUrl = parseHttpUrlString(value.testUrl, "testUrl");
+  const testUrl = parseHttpUrlString(migratedValue.testUrl, "testUrl");
   if (!testUrl.ok) return testUrl;
-  const testInterval = parsePositiveInteger(value.testInterval, "testInterval");
+  const testInterval = parsePositiveInteger(migratedValue.testInterval, "testInterval");
   if (!testInterval.ok) return testInterval;
-  const ruleProviderBaseUrl = parseHttpUrlString(value.ruleProviderBaseUrl, "ruleProviderBaseUrl");
+  const ruleProviderBaseUrl = parseHttpUrlString(migratedValue.ruleProviderBaseUrl, "ruleProviderBaseUrl");
   if (!ruleProviderBaseUrl.ok) return ruleProviderBaseUrl;
-  const cnIpNoResolve = parseOptionalBoolean(value.cnIpNoResolve, "cnIpNoResolve");
+  const cnIpNoResolve = parseOptionalBoolean(migratedValue.cnIpNoResolve, "cnIpNoResolve");
   if (!cnIpNoResolve.ok) return cnIpNoResolve;
   const experimentalCnUseCnRuleSet = parseOptionalBoolean(
-    value.experimentalCnUseCnRuleSet,
+    migratedValue.experimentalCnUseCnRuleSet,
     "experimentalCnUseCnRuleSet"
   );
   if (!experimentalCnUseCnRuleSet.ok) return experimentalCnUseCnRuleSet;
@@ -121,7 +116,7 @@ export function validateSubBoostTemplateConfig(value: unknown): ValidationResult
       enabledProxyGroups: enabledProxyGroups.value,
       hiddenProxyGroups: hiddenProxyGroups.value,
       customProxyGroups: customProxyGroups.value,
-      filteredProxyGroups: filteredProxyGroups.value,
+      proxyGroupAdvanced: proxyGroupAdvanced.value,
       customRuleSets: ruleModel.customRuleSets,
       builtinRuleEdits: ruleModel.builtinRuleEdits,
       customRules: customRules.value,
@@ -315,19 +310,36 @@ function parseCustomProxyGroups(value: unknown): { ok: true; value: CustomProxyG
     if (!name.ok) return name;
     const emoji = parseRequiredString(item.emoji, "customProxyGroups.emoji", { allowEmpty: true });
     if (!emoji.ok) return emoji;
-    const groupType = parseFilteredGroupType(item.groupType, "customProxyGroups.groupType");
+    const groupType = parseProxyGroupType(item.groupType, "customProxyGroups.groupType");
     if (!groupType.ok) return groupType;
     const strategy = parseOptionalLoadBalanceStrategy(item.strategy, "customProxyGroups.strategy");
     if (!strategy.ok) return strategy;
+    const description = typeof item.description === "string" ? item.description.trim() : "";
     out.push({
       id: id.value,
       name: name.value,
       emoji: emoji.value,
+      ...(description ? { description } : {}),
       groupType: groupType.value,
       ...(groupType.value === "load-balance"
         ? { strategy: strategy.value ?? DEFAULT_LOAD_BALANCE_STRATEGY }
         : {}),
+      advanced: normalizeProxyGroupAdvancedConfig(item.advanced),
     });
+  }
+  return { ok: true, value: out };
+}
+
+function parseProxyGroupAdvanced(
+  value: unknown
+): { ok: true; value: NonNullable<SubBoostTemplateConfig["proxyGroupAdvanced"]> } | { ok: false; error: string } {
+  if (value === undefined) return { ok: true, value: {} };
+  if (!isRecord(value)) return invalid("proxyGroupAdvanced 必须是对象");
+  const out: NonNullable<SubBoostTemplateConfig["proxyGroupAdvanced"]> = {};
+  for (const [moduleId, rawConfig] of Object.entries(value)) {
+    const id = moduleId.trim();
+    if (!BUILTIN_MODULE_IDS.has(id)) return invalid("proxyGroupAdvanced 包含未知代理组");
+    out[id] = normalizeProxyGroupAdvancedConfig(rawConfig);
   }
   return { ok: true, value: out };
 }
@@ -371,51 +383,6 @@ function parseBuiltinRuleEdits(value: unknown): { ok: true; value: true } | { ok
   return { ok: true, value: true };
 }
 
-function parseFilteredProxyGroups(value: unknown): { ok: true; value: FilteredProxyGroup[] } | { ok: false; error: string } {
-  if (value === undefined) return { ok: true, value: [] };
-  if (!Array.isArray(value)) return invalid("filteredProxyGroups 必须是数组");
-  const out: FilteredProxyGroup[] = [];
-  for (const item of value) {
-    if (!isRecord(item)) return invalid("filteredProxyGroups 只能包含对象");
-    const id = parseRequiredString(item.id, "filteredProxyGroups.id");
-    if (!id.ok) return id;
-    const name = parseRequiredString(item.name, "filteredProxyGroups.name");
-    if (!name.ok) return name;
-    const enabled = parseBoolean(item.enabled, "filteredProxyGroups.enabled");
-    if (!enabled.ok) return enabled;
-    const groupType = parseFilteredGroupType(item.groupType ?? "select", "filteredProxyGroups.groupType");
-    if (!groupType.ok) return groupType;
-    const sourceIds = parseStringArray(item.sourceIds ?? [], "filteredProxyGroups.sourceIds");
-    if (!sourceIds.ok) return sourceIds;
-    const regions = parseNodeRegions(item.regions ?? []);
-    if (!regions.ok) return regions;
-    const excludedNodeNames = parseStringArray(item.excludedNodeNames ?? [], "filteredProxyGroups.excludedNodeNames");
-    if (!excludedNodeNames.ok) return excludedNodeNames;
-    const strategy = parseOptionalLoadBalanceStrategy(item.strategy, "filteredProxyGroups.strategy");
-    if (!strategy.ok) return strategy;
-    out.push({
-      id: id.value,
-      name: name.value,
-      enabled: enabled.value,
-      groupType: groupType.value,
-      ...(groupType.value === "load-balance"
-        ? { strategy: strategy.value ?? DEFAULT_LOAD_BALANCE_STRATEGY }
-        : {}),
-      sourceIds: sourceIds.value,
-      regions: regions.value,
-      excludedNodeNames: excludedNodeNames.value,
-      ...(typeof item.includeRegex === "string" && item.includeRegex.trim()
-        ? { includeRegex: item.includeRegex.trim() }
-        : {}),
-      ...(typeof item.excludeRegex === "string" && item.excludeRegex.trim()
-        ? { excludeRegex: item.excludeRegex.trim() }
-        : {}),
-      ...(typeof item.emoji === "string" ? { emoji: item.emoji.trim() } : {}),
-    });
-  }
-  return { ok: true, value: out };
-}
-
 function parseDialerProxyGroups(value: unknown): { ok: true; value: DialerProxyGroup[] } | { ok: false; error: string } {
   if (!Array.isArray(value)) return invalid("dialerProxyGroups 必须是数组");
   const out: DialerProxyGroup[] = [];
@@ -425,7 +392,10 @@ function parseDialerProxyGroups(value: unknown): { ok: true; value: DialerProxyG
     if (!id.ok) return id;
     const name = parseRequiredString(item.name, "dialerProxyGroups.name");
     if (!name.ok) return name;
-    if (item.type !== "select" && item.type !== "url-test") return invalid("dialerProxyGroups.type 无效");
+    const groupType = parseProxyGroupType(item.type, "dialerProxyGroups.type");
+    if (!groupType.ok) return groupType;
+    const strategy = parseOptionalLoadBalanceStrategy(item.strategy, "dialerProxyGroups.strategy");
+    if (!strategy.ok) return strategy;
     const relayNodes = parseStringArray(item.relayNodes, "dialerProxyGroups.relayNodes");
     if (!relayNodes.ok) return relayNodes;
     const targetNodes = parseStringArray(item.targetNodes, "dialerProxyGroups.targetNodes");
@@ -435,7 +405,10 @@ function parseDialerProxyGroups(value: unknown): { ok: true; value: DialerProxyG
     out.push({
       id: id.value,
       name: name.value,
-      type: item.type,
+      type: groupType.value,
+      ...(groupType.value === "load-balance"
+        ? { strategy: strategy.value ?? DEFAULT_LOAD_BALANCE_STRATEGY }
+        : {}),
       relayNodes: relayNodes.value,
       targetNodes: targetNodes.value,
       ...(enabled.value !== undefined ? { enabled: enabled.value } : {}),
@@ -444,12 +417,12 @@ function parseDialerProxyGroups(value: unknown): { ok: true; value: DialerProxyG
   return { ok: true, value: out };
 }
 
-function parseFilteredGroupType(
+function parseProxyGroupType(
   value: unknown,
   field: string
-): { ok: true; value: FilteredProxyGroupType } | { ok: false; error: string } {
-  if (typeof value === "string" && FILTERED_GROUP_TYPES.has(value as FilteredProxyGroupType)) {
-    return { ok: true, value: value as FilteredProxyGroupType };
+): { ok: true; value: ProxyGroupGroupType } | { ok: false; error: string } {
+  if (isProxyGroupGroupType(value)) {
+    return { ok: true, value };
   }
   return invalid(`${field} 无效`);
 }
@@ -461,16 +434,4 @@ function parseOptionalLoadBalanceStrategy(
   if (value === undefined) return { ok: true, value: undefined };
   if (!isLoadBalanceStrategy(value)) return invalid(`${field} 无效`);
   return { ok: true, value };
-}
-
-function parseNodeRegions(value: unknown): { ok: true; value: NodeRegion[] } | { ok: false; error: string } {
-  const parsed = parseStringArray(value, "filteredProxyGroups.regions");
-  if (!parsed.ok) return parsed;
-  const out: NodeRegion[] = [];
-  for (const region of parsed.value) {
-    const key = region.toLowerCase();
-    if (!NODE_REGIONS.has(key as NodeRegion)) return invalid("filteredProxyGroups.regions 包含未知地区");
-    out.push(key as NodeRegion);
-  }
-  return { ok: true, value: out };
 }

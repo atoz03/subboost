@@ -17,6 +17,7 @@ import { cn } from "@subboost/ui/lib/utils";
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-groups";
 import { getModuleRuleOrderKey } from "@subboost/core/generator/module-rules";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
+import { resolveProxyGroupTargetName } from "@subboost/core/proxy-group-targets";
 import { normalizeRuleSetPathInput } from "@subboost/core/rules/rule-model";
 import { RULE_CATEGORIES, type RuleSetInfo } from "@subboost/core/rules/metadata";
 import { useConfigStore } from "@subboost/ui/store/config-store";
@@ -62,13 +63,33 @@ export function ProxyGroupsRulesLibrary() {
     const hidden = new Set(hiddenProxyGroups);
     return PROXY_GROUP_MODULES.filter((module) => !hidden.has(module.id));
   }, [hiddenProxyGroups]);
+  const activeCustomProxyGroups = React.useMemo(
+    () => customProxyGroups.filter((group) => group.enabled !== false),
+    [customProxyGroups],
+  );
+  const moduleNames = React.useMemo(
+    () =>
+      Object.fromEntries(
+        PROXY_GROUP_MODULES.map((module) => [
+          module.id,
+          resolveModuleFullName(module),
+        ]),
+      ),
+    [resolveModuleFullName],
+  );
 
   React.useEffect(() => {
-    if (!addToGroupId.startsWith("module:")) return;
-    const moduleId = addToGroupId.slice("module:".length);
-    if (visibleProxyGroupModules.some((module) => module.id === moduleId)) return;
+    if (addToGroupId.startsWith("module:")) {
+      const moduleId = addToGroupId.slice("module:".length);
+      if (visibleProxyGroupModules.some((module) => module.id === moduleId)) return;
+    } else if (addToGroupId.startsWith("custom:")) {
+      const groupId = addToGroupId.slice("custom:".length);
+      if (activeCustomProxyGroups.some((group) => group.id === groupId)) return;
+    } else {
+      return;
+    }
     setAddToGroupId("");
-  }, [addToGroupId, visibleProxyGroupModules]);
+  }, [activeCustomProxyGroups, addToGroupId, visibleProxyGroupModules]);
 
   return (
     <div className="min-w-0 space-y-2">
@@ -121,12 +142,26 @@ export function ProxyGroupsRulesLibrary() {
                 ? builtinRuleEdits?.[getModuleRuleOrderKey(builtinSourceModule.id, rule.id)]?.target ||
                   resolveModuleFullName(builtinSourceModule)
                 : "";
+              const resolvedBuiltinTargetName = builtinSourceModule
+                ? resolveProxyGroupTargetName(builtinTargetName, {
+                    moduleNames,
+                    customProxyGroups: activeCustomProxyGroups,
+                    fallbackTarget: resolveModuleFullName(builtinSourceModule),
+                  })
+                : "";
               const belongsToModule = builtinTargetName
-                ? visibleProxyGroupModules.find((m) => resolveModuleFullName(m) === builtinTargetName)
+                ? visibleProxyGroupModules.find((m) => resolveModuleFullName(m) === resolvedBuiltinTargetName)
                 : null;
               const customRuleSet = customRuleSets.find((item) => item.id === rule.id);
               const belongsToCustom = customRuleSet
-                ? customProxyGroups.find((g) => g.name === customRuleSet.target)
+                ? activeCustomProxyGroups.find(
+                    (g) =>
+                      g.name ===
+                      resolveProxyGroupTargetName(customRuleSet.target, {
+                        moduleNames,
+                        customProxyGroups: activeCustomProxyGroups,
+                      }),
+                  )
                 : null;
               const isModuleEnabled = belongsToModule
                 ? enabledProxyGroups.includes(belongsToModule.id)
@@ -356,7 +391,7 @@ export function ProxyGroupsRulesLibrary() {
                     className="text-xs"
                     disabled
                   >
-                    内置代理组
+                    内置组
                   </SelectItem>
                   {visibleProxyGroupModules.map((m) => (
                     <SelectItem
@@ -372,14 +407,14 @@ export function ProxyGroupsRulesLibrary() {
                     className="text-xs"
                     disabled
                   >
-                    自定义分组
+                    自定义组
                   </SelectItem>
-                  {customProxyGroups.length === 0 ? (
+                  {activeCustomProxyGroups.length === 0 ? (
                     <SelectItem value="__none__" className="text-xs" disabled>
-                      暂无自定义分组
+                      暂无自定义组
                     </SelectItem>
                   ) : (
-                    customProxyGroups.map((g) => (
+                    activeCustomProxyGroups.map((g) => (
                       <SelectItem
                         key={g.id}
                         value={`custom:${g.id}`}
@@ -424,7 +459,6 @@ export function ProxyGroupsRulesLibrary() {
                       ? visibleProxyGroupModules.find((m) => m.id === target.id)
                       : null;
                   if (target.kind === "module" && !targetModule) return;
-
                   const usedRuleIds = new Map<string, string>();
                   for (const m of visibleProxyGroupModules) {
                     const groupName = resolveModuleFullName(m);
@@ -432,17 +466,34 @@ export function ProxyGroupsRulesLibrary() {
                       const edit = builtinRuleEdits?.[getModuleRuleOrderKey(m.id, r.id)];
                       if (edit?.enabled === false) continue;
                       if (!usedRuleIds.has(r.id)) {
-                        usedRuleIds.set(r.id, edit?.target || groupName);
+                        usedRuleIds.set(
+                          r.id,
+                          edit?.target
+                            ? resolveProxyGroupTargetName(edit.target, {
+                                moduleNames,
+                                customProxyGroups: activeCustomProxyGroups,
+                                fallbackTarget: groupName,
+                              })
+                            : groupName,
+                        );
                       }
                     }
                   }
                   for (const ruleSet of customRuleSets) {
-                    if (!usedRuleIds.has(ruleSet.id)) usedRuleIds.set(ruleSet.id, ruleSet.target);
+                    if (!usedRuleIds.has(ruleSet.id)) {
+                      usedRuleIds.set(
+                        ruleSet.id,
+                        resolveProxyGroupTargetName(ruleSet.target, {
+                          moduleNames,
+                          customProxyGroups: activeCustomProxyGroups,
+                        }),
+                      );
+                    }
                   }
 
                   const targetDisplayName =
                     target.kind === "custom"
-                      ? customProxyGroups.find((g) => g.id === target.id)
+                      ? activeCustomProxyGroups.find((g) => g.id === target.id)
                           ?.name || ""
                       : targetModule
                         ? resolveModuleFullName(targetModule)
@@ -479,10 +530,8 @@ export function ProxyGroupsRulesLibrary() {
                   let skippedInvalidCount = 0;
 
                   if (target.kind === "custom") {
-                    const cg = customProxyGroups.find(
-                      (g) => g.id === target.id,
-                    );
-                    if (!cg) return;
+                    const group = activeCustomProxyGroups.find((g) => g.id === target.id);
+                    if (!group) return;
                     const existing = new Set(customRuleSets.map((r) => r.id));
                     const rulesToAdd = selectedRules
                       .filter((r) => !existing.has(r.id))
@@ -500,7 +549,7 @@ export function ProxyGroupsRulesLibrary() {
                     skippedExistingCount =
                       selectedRules.length - rulesToAdd.length;
                     if (rulesToAdd.length > 0) {
-                      addModuleRules(cg.id, rulesToAdd);
+                      addModuleRules(group.id, rulesToAdd);
                       addedCount = rulesToAdd.length;
                     }
                   } else {

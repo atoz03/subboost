@@ -157,7 +157,6 @@ describe("VisualGraph", () => {
       customRules: [{ id: "manual" }],
       customProxyGroups: [{ id: "custom-1", name: "🧩 Custom", emoji: "🧩", groupType: "load-balance", strategy: "round-robin" }],
       customRuleSets: [],
-      filteredProxyGroups: [{ id: "filtered-1", name: "🧩 Filtered", emoji: "", enabled: true }],
       builtinRuleEdits: {},
       proxyGroupNameOverrides: {},
       proxyGroupOrder: ["dialer:d1", "module:auto", "missing", "module:select", "dialer:d1"],
@@ -193,7 +192,7 @@ describe("VisualGraph", () => {
       "module:auto",
       "module:select",
       "custom:custom-1",
-      "filtered:filtered-1",
+      "name:🧩 Filtered",
       "name:External",
     ]);
     expect(preview.displayGroups.find((group: any) => group.id === "module:auto").rules).toEqual([
@@ -223,7 +222,7 @@ describe("VisualGraph", () => {
       "module:select",
       "module:auto",
       "custom:custom-1",
-      "filtered:filtered-1",
+      "name:🧩 Filtered",
       "name:External",
     ]);
     expect(html).toContain("还有 2 个节点");
@@ -300,20 +299,16 @@ describe("VisualGraph", () => {
       null,
       { id: "bad-type", name: 123 },
       { id: "bad-name", name: "   " },
+      { id: "emoji", name: "Emoji Filter", emoji: "⭐", groupType: "select" },
       { id: "plain", name: "Plain Custom", emoji: "", groupType: "", strategy: "", rules: [] },
     ];
-    mocks.store.filteredProxyGroups = [
-      null,
-      { id: "disabled", name: "Disabled", enabled: false },
-      { id: "emoji", name: "Emoji Filter", emoji: "⭐", enabled: true },
-    ];
-    mocks.store.proxyGroupOrder = ["name:", "filtered:emoji", "custom:plain", "dialer:d3"];
+    mocks.store.proxyGroupOrder = ["name:", "custom:emoji", "custom:plain", "dialer:d3"];
 
     const { html } = renderGraph({ 3: 800 });
     const groups = mocks.captures.proxyGroupsPreview.displayGroups;
 
-    expect(groups.map((group: any) => group.id)).toEqual(["name:", "filtered:emoji", "custom:plain", "dialer:d3"]);
-    expect(groups.find((group: any) => group.id === "filtered:emoji")).toMatchObject({ emoji: "⭐" });
+    expect(groups.map((group: any) => group.id)).toEqual(["name:", "custom:emoji", "custom:plain", "dialer:d3"]);
+    expect(groups.find((group: any) => group.id === "custom:emoji")).toMatchObject({ emoji: "⭐" });
     expect(groups.find((group: any) => group.id === "dialer:d3").dialer).toMatchObject({
       relayNodes: [],
       targetNodes: [],

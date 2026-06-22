@@ -226,7 +226,10 @@ describe("ProxyGroupsRulesLibrary", () => {
       customRuleSets: [],
       builtinRuleEdits: {},
       addModuleRules: vi.fn(),
-      customProxyGroups: [{ id: "custom-1", name: "Custom" }],
+      customProxyGroups: [
+        { id: "custom-1", name: "Custom" },
+        { id: "custom-2", name: "Target" },
+      ],
       updateCustomProxyGroup: vi.fn(),
       proxyGroupNameOverrides: { auto: "Auto", fallback: "Fallback" },
     };
@@ -285,6 +288,11 @@ describe("ProxyGroupsRulesLibrary", () => {
     result = renderLibrary();
     expect(result.html).toContain("Custom");
     expect(result.html).toContain("已添加");
+
+    mocks.store.customRuleSets = [{ id: "telegram", name: "Telegram", behavior: "ipcidr", path: "geoip/telegram.mrs", target: "Target" }];
+    result = renderLibrary();
+    expect(result.html).toContain("Target");
+    expect(result.html).toContain("已添加");
   });
 
   it("adds selected rules to a custom group", () => {
@@ -306,6 +314,28 @@ describe("ProxyGroupsRulesLibrary", () => {
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "已添加规则集" }));
     expect(mocks.interactions.ruleAdded).toHaveBeenCalledWith({ source: "library", kind: "ruleset" });
     expect(setters[0]).toHaveBeenCalledWith([]);
+  });
+
+  it("adds selected rules to another custom group", () => {
+    const { html } = renderLibrary({ 0: [telegramRule], 1: "custom:custom-2" });
+    expect(html).toContain("自定义组");
+    expect(html).toContain("Target");
+
+    mocks.captures.buttons.find((props) => props.children === "添加").onClick();
+
+    expect(mocks.store.addModuleRules).toHaveBeenCalledWith("custom-2", [
+      {
+        id: "telegram",
+        name: "Telegram",
+        behavior: "ipcidr",
+        path: "geoip/telegram.mrs",
+        noResolve: true,
+      },
+    ]);
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "已添加规则集",
+      description: expect.stringContaining("Target"),
+    }));
   });
 
   it("adds valid selected rules to a module and reports skipped invalid rules", () => {
@@ -359,6 +389,14 @@ describe("ProxyGroupsRulesLibrary", () => {
     expect(setters[1]).toHaveBeenCalledWith("");
 
     renderLibrary({ 1: "module:auto" });
+    stateMock.effects[0]();
+    expect(stateMock.setters[1]).not.toHaveBeenCalledWith("");
+
+    const filteredResult = renderLibrary({ 1: "custom:missing" });
+    stateMock.effects[0]();
+    expect(filteredResult.setters[1]).toHaveBeenCalledWith("");
+
+    renderLibrary({ 1: "custom:custom-1" });
     stateMock.effects[0]();
     expect(stateMock.setters[1]).not.toHaveBeenCalledWith("");
 

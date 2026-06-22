@@ -55,8 +55,8 @@ function meaningfulState(overrides: Record<string, unknown> = {}) {
     deletedNodes: [{ originName: "Gone", name: "Gone" }],
     customRules: [{ id: "rule-1", type: "DOMAIN", value: "example.com", target: "Proxy" }],
     customProxyGroups: [{ id: "custom-1", name: "Custom", emoji: "", groupType: "select" }],
+    proxyGroupAdvanced: { ai: { includeRegex: "AI" } },
     customRuleSets: [{ id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 Labs" }],
-    filteredProxyGroups: [{ id: "filtered-1", name: "Filtered", enabled: true }],
     builtinRuleEdits: { "module:ai:openai": { enabled: false } },
     dialerProxyGroups: [{ id: "dialer-1", name: "Relay", relayNodes: ["Node A"], targetNodes: [] }],
     proxyGroupNameOverrides: { ai: "Labs" },
@@ -148,8 +148,8 @@ describe("auth config handoff", () => {
       hiddenProxyGroups: ["youtube"],
       customRules: [{ id: "rule-1", type: "DOMAIN", value: "example.com", target: "Proxy" }],
       customProxyGroups: [{ id: "custom-1", name: "Custom", emoji: "", groupType: "select" }],
+      proxyGroupAdvanced: { ai: { includeRegex: "AI" } },
       customRuleSets: [{ id: "custom-ai", name: "Custom AI", behavior: "domain", path: "geosite/custom-ai.mrs", target: "🤖 Labs" }],
-      filteredProxyGroups: [{ id: "filtered-1", name: "Filtered", enabled: true }],
       builtinRuleEdits: { "module:ai:openai": { enabled: false } },
       proxyGroupNameOverrides: { ai: "Labs" },
       proxyGroupOrder: ["module:ai"],
@@ -286,7 +286,6 @@ describe("auth config handoff", () => {
       deletedNodes: [{ originName: "Gone" }],
       enabledProxyGroups: ["select"],
       customProxyGroups: [],
-      filteredProxyGroups: [{ id: "filtered" }],
       customRuleSets: [
         {
           id: "custom-ai",

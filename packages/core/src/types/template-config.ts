@@ -1,5 +1,13 @@
-import type { BuiltinRuleEdits, CustomProxyGroup, CustomRule, CustomRuleSet, TemplateType } from "./config";
-import type { FilteredProxyGroup } from "./filtered-proxy-group";
+import type {
+  BuiltinRuleEdits,
+  CustomProxyGroup,
+  CustomRule,
+  CustomRuleSet,
+  LoadBalanceStrategy,
+  ProxyGroupAdvancedConfig,
+  ProxyGroupGroupType,
+  TemplateType,
+} from "./config";
 
 // 中转代理组（使用 dialer-proxy 语法）
 export interface DialerProxyGroup {
@@ -7,7 +15,8 @@ export interface DialerProxyGroup {
   enabled?: boolean; // 默认启用；停用后不会写入配置
   name: string; // 组名，如 "美国中转"
   relayNodes: string[]; // 用于中转的节点名称列表
-  type: "select" | "url-test"; // 组类型
+  type: ProxyGroupGroupType; // 组类型
+  strategy?: LoadBalanceStrategy; // 负载均衡策略，仅 type=load-balance 时生效
   targetNodes: string[]; // 使用此中转的落地节点名称列表
 }
 
@@ -17,7 +26,7 @@ export type SubBoostTemplateConfig = {
   enabledProxyGroups: string[];
   hiddenProxyGroups?: string[];
   customProxyGroups: CustomProxyGroup[];
-  filteredProxyGroups?: FilteredProxyGroup[];
+  proxyGroupAdvanced?: Record<string, ProxyGroupAdvancedConfig>;
   customRuleSets: CustomRuleSet[];
   builtinRuleEdits?: BuiltinRuleEdits;
   customRules: CustomRule[];

@@ -15,6 +15,7 @@ import { toast } from "@subboost/ui/components/ui/toaster";
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-groups";
 import { getModuleRuleOrderKey } from "@subboost/core/generator/module-rules";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
+import { resolveProxyGroupTargetName } from "@subboost/core/proxy-group-targets";
 import {
   collectCustomRoutingRuleSets,
   getRuleSetTargetValue,
@@ -117,6 +118,17 @@ export function ProxyGroupsAddedRuleSets({
     [customProxyGroups, proxyGroupNameOverrides, visibleProxyGroupModules],
   );
 
+  const moduleNames = React.useMemo(
+    () =>
+      Object.fromEntries(
+        PROXY_GROUP_MODULES.map((module) => [
+          module.id,
+          resolveProxyGroupModuleName(module, proxyGroupNameOverrides?.[module.id]),
+        ]),
+      ),
+    [proxyGroupNameOverrides],
+  );
+
   React.useEffect(() => {
     if (!editingKey) return;
     if (visibleAddedRuleSets.some((item) => item.key === editingKey)) return;
@@ -141,20 +153,38 @@ export function ProxyGroupsAddedRuleSets({
         const builtinConflict = (proxyModule.rules ?? []).some((rule) => {
           if (rule.id !== item.id) return false;
           const edit = builtinRuleEdits?.[getModuleRuleOrderKey(proxyModule.id, rule.id)];
-          return edit?.enabled !== false && (edit?.target || moduleName) === moduleName;
+          const editTarget = edit?.target
+            ? resolveProxyGroupTargetName(edit.target, {
+                moduleNames,
+                customProxyGroups,
+                fallbackTarget: moduleName,
+              })
+            : moduleName;
+          return edit?.enabled !== false && editTarget === moduleName;
         });
         const customConflict = customRuleSets.some(
-          (ruleSet) => ruleSet.id === item.id && ruleSet.target === moduleName && item.target.value !== getRuleSetTargetValue(target)
+          (ruleSet) =>
+            ruleSet.id === item.id &&
+            resolveProxyGroupTargetName(ruleSet.target, {
+              moduleNames,
+              customProxyGroups,
+            }) === moduleName &&
+            item.target.value !== getRuleSetTargetValue(target),
         );
         return builtinConflict || customConflict;
       }
 
       const group = customProxyGroups.find((entry) => entry.id === target.id);
       if (!group) return true;
+      const targetName = group.name.trim();
+      if (!targetName) return true;
       return customRuleSets.some(
         (ruleSet) =>
           ruleSet.id === item.id &&
-          ruleSet.target === group.name &&
+          resolveProxyGroupTargetName(ruleSet.target, {
+            moduleNames,
+            customProxyGroups,
+          }) === targetName &&
           item.target.value !== getRuleSetTargetValue(target),
       );
     },
@@ -162,6 +192,7 @@ export function ProxyGroupsAddedRuleSets({
       builtinRuleEdits,
       customProxyGroups,
       customRuleSets,
+      moduleNames,
       proxyGroupNameOverrides,
       visibleProxyGroupModules,
     ],

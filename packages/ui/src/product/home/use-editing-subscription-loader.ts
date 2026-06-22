@@ -7,6 +7,8 @@ import type { EditingSubscriptionLoaderOptions } from "./editing-subscription-ty
 import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
 import { ensureCustomRulesHaveIds } from "@subboost/core/rules/custom-rule-utils";
 import { normalizeRuleModelFromConfig } from "@subboost/core/rules/rule-model";
+import { migrateFilteredProxyGroupsConfig } from "@subboost/core/migrations/filtered-proxy-groups";
+import { normalizeProxyGroupAdvancedConfig } from "@subboost/core/proxy-group-advanced";
 import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/url-input";
 import {
   hasSubscriptionUserInfo,
@@ -74,7 +76,9 @@ export function useEditingSubscriptionLoader({
           }
           return out;
         })();
-        const cfg = sub.config && typeof sub.config === "object" ? (sub.config as Record<string, unknown>) : {};
+        const cfg = migrateFilteredProxyGroupsConfig(
+          sub.config && typeof sub.config === "object" ? (sub.config as Record<string, unknown>) : {},
+        );
         const subscriptionInfoFromRecord = normalizeSubscriptionUserInfo((sub as any).subscriptionInfo);
         const hasSubscriptionInfoFromRecord = hasSubscriptionUserInfo(subscriptionInfoFromRecord);
         const deletedNodesFromCfg = Array.isArray((cfg as any).deletedNodes)
@@ -415,9 +419,14 @@ export function useEditingSubscriptionLoader({
         const customProxyGroupsFromCfg = ruleModelFromCfg.customProxyGroups;
         const customRuleSetsFromCfg = ruleModelFromCfg.customRuleSets;
         const builtinRuleEditsFromCfg = ruleModelFromCfg.builtinRuleEdits;
-        const filteredProxyGroupsFromCfg = Array.isArray((cfg as any).filteredProxyGroups)
-          ? (((cfg as any).filteredProxyGroups as unknown[]) as any[])
-          : [];
+        const proxyGroupAdvancedFromCfg =
+          cfg.proxyGroupAdvanced && typeof cfg.proxyGroupAdvanced === "object" && !Array.isArray(cfg.proxyGroupAdvanced)
+            ? Object.fromEntries(
+                Object.entries(cfg.proxyGroupAdvanced as Record<string, unknown>)
+                  .map(([id, value]) => [id.trim(), normalizeProxyGroupAdvancedConfig(value)] as const)
+                  .filter(([id, advanced]) => id && Object.keys(advanced).length > 0),
+              )
+            : {};
         const dialerProxyGroupsFromCfg = Array.isArray(cfg.dialerProxyGroups) ? (cfg.dialerProxyGroups as any[]) : [];
         const proxyGroupNameOverridesFromCfg =
           cfg.proxyGroupNameOverrides && typeof cfg.proxyGroupNameOverrides === "object"
@@ -505,7 +514,7 @@ export function useEditingSubscriptionLoader({
           customProxyGroups: customProxyGroupsFromCfg as any,
           customRuleSets: customRuleSetsFromCfg,
           builtinRuleEdits: builtinRuleEditsFromCfg,
-          filteredProxyGroups: filteredProxyGroupsFromCfg as any,
+          proxyGroupAdvanced: proxyGroupAdvancedFromCfg,
           moduleRuleEditWarningAccepted:
             typeof (cfg as any).moduleRuleEditWarningAccepted === "boolean"
               ? Boolean((cfg as any).moduleRuleEditWarningAccepted)

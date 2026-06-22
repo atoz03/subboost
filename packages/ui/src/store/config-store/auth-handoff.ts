@@ -2,6 +2,7 @@ import type { ConfigState, SourceType, SubscriptionSource } from "./definitions"
 import { initialState } from "./definitions";
 import { safeParseJsonObject } from "@subboost/core/json";
 import { normalizeRuleModelFromConfig } from "@subboost/core/rules/rule-model";
+import { migrateFilteredProxyGroupsConfig } from "@subboost/core/migrations/filtered-proxy-groups";
 
 export const AUTH_CONFIG_HANDOFF_STORAGE_NAME = "subboost-auth-config-handoff";
 
@@ -113,7 +114,7 @@ function hasMeaningfulConfig(state: ConfigState): boolean {
     state.customRules.length > 0 ||
     state.customRuleSets.length > 0 ||
     state.customProxyGroups.length > 0 ||
-    state.filteredProxyGroups.length > 0 ||
+    hasRecordEntries(state.proxyGroupAdvanced as Record<string, unknown>) ||
     hasRecordEntries(state.builtinRuleEdits as Record<string, unknown>) ||
     state.dialerProxyGroups.length > 0 ||
     hasRecordEntries(state.proxyGroupNameOverrides) ||
@@ -146,7 +147,7 @@ function buildHandoffState(state: ConfigState): Partial<ConfigState> {
     enabledProxyGroups: state.enabledProxyGroups,
     hiddenProxyGroups: state.hiddenProxyGroups,
     customProxyGroups: state.customProxyGroups,
-    filteredProxyGroups: state.filteredProxyGroups,
+    proxyGroupAdvanced: state.proxyGroupAdvanced,
     customRuleSets: state.customRuleSets,
     builtinRuleEdits: state.builtinRuleEdits,
     customRules: state.customRules,
@@ -169,57 +170,59 @@ function buildHandoffState(state: ConfigState): Partial<ConfigState> {
 }
 
 function normalizeHandoffState(raw: unknown): Partial<ConfigState> | null {
-  if (!isRecord(raw)) return null;
+  const migratedRaw = migrateFilteredProxyGroupsConfig(raw);
+  if (!isRecord(migratedRaw)) return null;
   const out: Partial<ConfigState> = {};
 
-  const sources = sourceArray(raw.sources);
+  const sources = sourceArray(migratedRaw.sources);
   if (sources) out.sources = sources;
-  const nodes = objectArray<ConfigState["nodes"][number]>(raw.nodes);
+  const nodes = objectArray<ConfigState["nodes"][number]>(migratedRaw.nodes);
   if (nodes) out.nodes = nodes;
-  const deletedNodeNames = stringArray(raw.deletedNodeNames);
+  const deletedNodeNames = stringArray(migratedRaw.deletedNodeNames);
   if (deletedNodeNames) out.deletedNodeNames = deletedNodeNames;
-  const deletedNodes = objectArray<ConfigState["deletedNodes"][number]>(raw.deletedNodes);
+  const deletedNodes = objectArray<ConfigState["deletedNodes"][number]>(migratedRaw.deletedNodes);
   if (deletedNodes) out.deletedNodes = deletedNodes;
-  if (raw.template === "minimal" || raw.template === "standard" || raw.template === "full") out.template = raw.template;
-  const enabledProxyGroups = stringArray(raw.enabledProxyGroups);
+  if (migratedRaw.template === "minimal" || migratedRaw.template === "standard" || migratedRaw.template === "full") out.template = migratedRaw.template;
+  const enabledProxyGroups = stringArray(migratedRaw.enabledProxyGroups);
   if (enabledProxyGroups) out.enabledProxyGroups = enabledProxyGroups;
-  const hiddenProxyGroups = stringArray(raw.hiddenProxyGroups);
+  const hiddenProxyGroups = stringArray(migratedRaw.hiddenProxyGroups);
   if (hiddenProxyGroups) out.hiddenProxyGroups = hiddenProxyGroups;
-  const ruleModel = normalizeRuleModelFromConfig(raw);
-  const customProxyGroups = objectArray<ConfigState["customProxyGroups"][number]>(raw.customProxyGroups);
+  const ruleModel = normalizeRuleModelFromConfig(migratedRaw);
+  const customProxyGroups = objectArray<ConfigState["customProxyGroups"][number]>(migratedRaw.customProxyGroups);
   if (customProxyGroups || ruleModel.customProxyGroups.length > 0) out.customProxyGroups = ruleModel.customProxyGroups;
-  const filteredProxyGroups = objectArray<ConfigState["filteredProxyGroups"][number]>(raw.filteredProxyGroups);
-  if (filteredProxyGroups) out.filteredProxyGroups = filteredProxyGroups;
-  if (Array.isArray(raw.customRuleSets)) {
+  if (isRecord(migratedRaw.proxyGroupAdvanced)) {
+    out.proxyGroupAdvanced = migratedRaw.proxyGroupAdvanced as ConfigState["proxyGroupAdvanced"];
+  }
+  if (Array.isArray(migratedRaw.customRuleSets)) {
     out.customRuleSets = ruleModel.customRuleSets;
   }
-  if (isRecord(raw.builtinRuleEdits)) {
+  if (isRecord(migratedRaw.builtinRuleEdits)) {
     out.builtinRuleEdits = ruleModel.builtinRuleEdits;
   }
-  const customRules = objectArray<ConfigState["customRules"][number]>(raw.customRules);
+  const customRules = objectArray<ConfigState["customRules"][number]>(migratedRaw.customRules);
   if (customRules) out.customRules = customRules;
-  const dialerProxyGroups = objectArray<ConfigState["dialerProxyGroups"][number]>(raw.dialerProxyGroups);
+  const dialerProxyGroups = objectArray<ConfigState["dialerProxyGroups"][number]>(migratedRaw.dialerProxyGroups);
   if (dialerProxyGroups) out.dialerProxyGroups = dialerProxyGroups;
-  if (isStringRecord(raw.proxyGroupNameOverrides)) out.proxyGroupNameOverrides = raw.proxyGroupNameOverrides;
-  const proxyGroupOrder = stringArray(raw.proxyGroupOrder);
+  if (isStringRecord(migratedRaw.proxyGroupNameOverrides)) out.proxyGroupNameOverrides = migratedRaw.proxyGroupNameOverrides;
+  const proxyGroupOrder = stringArray(migratedRaw.proxyGroupOrder);
   if (proxyGroupOrder) out.proxyGroupOrder = proxyGroupOrder;
-  const ruleOrder = stringArray(raw.ruleOrder);
+  const ruleOrder = stringArray(migratedRaw.ruleOrder);
   if (ruleOrder) out.ruleOrder = ruleOrder;
-  if (typeof raw.moduleRuleEditWarningAccepted === "boolean") out.moduleRuleEditWarningAccepted = raw.moduleRuleEditWarningAccepted;
-  if (typeof raw.appliedTemplateId === "string" || raw.appliedTemplateId === null) {
-    out.appliedTemplateId = raw.appliedTemplateId;
+  if (typeof migratedRaw.moduleRuleEditWarningAccepted === "boolean") out.moduleRuleEditWarningAccepted = migratedRaw.moduleRuleEditWarningAccepted;
+  if (typeof migratedRaw.appliedTemplateId === "string" || migratedRaw.appliedTemplateId === null) {
+    out.appliedTemplateId = migratedRaw.appliedTemplateId;
   }
-  if (typeof raw.dnsYaml === "string") out.dnsYaml = raw.dnsYaml;
-  if (typeof raw.mixedPort === "number" && Number.isFinite(raw.mixedPort)) out.mixedPort = raw.mixedPort;
-  if (typeof raw.allowLan === "boolean") out.allowLan = raw.allowLan;
-  if (typeof raw.testUrl === "string") out.testUrl = raw.testUrl;
-  if (typeof raw.testInterval === "number" && Number.isFinite(raw.testInterval)) out.testInterval = raw.testInterval;
-  if (typeof raw.ruleProviderBaseUrl === "string") out.ruleProviderBaseUrl = raw.ruleProviderBaseUrl;
-  if (typeof raw.cnIpNoResolve === "boolean") out.cnIpNoResolve = raw.cnIpNoResolve;
-  if (typeof raw.experimentalCnUseCnRuleSet === "boolean") {
-    out.experimentalCnUseCnRuleSet = raw.experimentalCnUseCnRuleSet;
+  if (typeof migratedRaw.dnsYaml === "string") out.dnsYaml = migratedRaw.dnsYaml;
+  if (typeof migratedRaw.mixedPort === "number" && Number.isFinite(migratedRaw.mixedPort)) out.mixedPort = migratedRaw.mixedPort;
+  if (typeof migratedRaw.allowLan === "boolean") out.allowLan = migratedRaw.allowLan;
+  if (typeof migratedRaw.testUrl === "string") out.testUrl = migratedRaw.testUrl;
+  if (typeof migratedRaw.testInterval === "number" && Number.isFinite(migratedRaw.testInterval)) out.testInterval = migratedRaw.testInterval;
+  if (typeof migratedRaw.ruleProviderBaseUrl === "string") out.ruleProviderBaseUrl = migratedRaw.ruleProviderBaseUrl;
+  if (typeof migratedRaw.cnIpNoResolve === "boolean") out.cnIpNoResolve = migratedRaw.cnIpNoResolve;
+  if (typeof migratedRaw.experimentalCnUseCnRuleSet === "boolean") {
+    out.experimentalCnUseCnRuleSet = migratedRaw.experimentalCnUseCnRuleSet;
   }
-  const listenerPorts = numberRecord(raw.listenerPorts);
+  const listenerPorts = numberRecord(migratedRaw.listenerPorts);
   if (listenerPorts) out.listenerPorts = listenerPorts;
 
   return out;

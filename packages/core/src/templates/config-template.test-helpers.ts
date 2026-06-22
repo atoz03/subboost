@@ -13,7 +13,7 @@ export function validConfig(patch: Partial<SubBoostTemplateConfig> & Record<stri
     enabledProxyGroups: getModulesForTemplate("minimal"),
     hiddenProxyGroups: [],
     customProxyGroups: [],
-    filteredProxyGroups: [],
+    proxyGroupAdvanced: {},
     customRuleSets: [],
     builtinRuleEdits: {},
     customRules: [],

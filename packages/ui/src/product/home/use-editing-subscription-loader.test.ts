@@ -113,7 +113,7 @@ function resetStoreState(overrides: Record<string, unknown> = {}) {
     proxyGroupNameOverrides: {},
     experimentalCnUseCnRuleSet: false,
     cnIpNoResolve: true,
-    filteredProxyGroups: [],
+    proxyGroupAdvanced: {},
     proxyGroupOrder: [],
     ruleOrder: [],
     ...overrides,
@@ -267,7 +267,17 @@ describe("useEditingSubscriptionLoader", () => {
       template: "full",
       enabledProxyGroups: ["select", "auto", "ai"],
       hiddenProxyGroups: ["youtube"],
-      customProxyGroups: [{ id: "custom-1", name: "Custom", emoji: "", groupType: "select" }],
+      customProxyGroups: [
+        { id: "custom-1", name: "Custom", emoji: "", groupType: "select", advanced: {} },
+        {
+          id: "migrated-filtered-fg-1",
+          name: "Fast",
+          emoji: "",
+          description: "自定义代理组",
+          groupType: "select",
+          advanced: {},
+        },
+      ],
       customRuleSets: [
         {
           id: "custom-ai",
@@ -277,7 +287,6 @@ describe("useEditingSubscriptionLoader", () => {
           target: "🤖 Labs",
         },
       ],
-      filteredProxyGroups: [{ id: "fg-1", name: "Fast", enabled: true, groupType: "select" }],
       builtinRuleEdits: { "module:ai:openai": { enabled: false } },
       moduleRuleEditWarningAccepted: true,
       proxyGroupNameOverrides: { ai: "Labs" },

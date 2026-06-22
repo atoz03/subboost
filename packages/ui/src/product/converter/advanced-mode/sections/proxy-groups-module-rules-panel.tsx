@@ -46,6 +46,10 @@ type CnCandidateRule = {
   parentModuleId?: string;
 };
 
+function isModuleRuleMoveTarget(target: ProxyGroupRuleTarget): target is ProxyGroupRuleTarget & MoveTarget {
+  return target.kind === "module" || target.kind === "custom";
+}
+
 function isCnCandidateRule(value: unknown): value is CnCandidateRule {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
@@ -191,7 +195,7 @@ export function ProxyGroupsModuleRulesPanel({
         id: targetModule.id,
         name: resolveProxyGroupModuleName(targetModule, proxyGroupNameOverrides?.[targetModule.id]),
       })),
-      ...customProxyGroups.map((group) => ({
+      ...customProxyGroups.filter((group) => group.enabled !== false).map((group) => ({
         kind: "custom" as const,
         id: group.id,
         name: group.name,
@@ -282,13 +286,13 @@ export function ProxyGroupsModuleRulesPanel({
   );
 
   return (
-    <div className="mt-2 border-t border-white/10 pt-1">
+    <div className="space-y-1">
       {rules.length === 0 && manualRules.length === 0 ? (
         <div className="px-3 py-4 text-center text-[11px] text-white/40">
           当前没有生效的规则集。
         </div>
       ) : (
-        <div className="space-y-1 py-1">
+        <div className="space-y-1">
           {rules.map((rule) => {
             if (rule.state !== "active") {
               const isCnIpRule = module.id === "cn" && rule.id === "cn-ip";
@@ -353,7 +357,7 @@ export function ProxyGroupsModuleRulesPanel({
                       kinds={["module", "custom"]}
                       currentTarget={{ kind: "module", id: module.id, name: moduleDisplayName }}
                       onMove={(target) => {
-                        if (isRuleSetMoveTarget(target)) {
+                        if (isRuleSetMoveTarget(target) && isModuleRuleMoveTarget(target)) {
                           void moveRule(rule, target);
                         }
                       }}
@@ -390,11 +394,11 @@ export function ProxyGroupsModuleRulesPanel({
       )}
 
       {module.id === "cn" && (
-        <div className="border-t border-white/10 py-1">
+        <div>
           <div
             className={cn(
-              "proxy-group-rule-row grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 py-2 pl-8 pr-2",
-              !experimentalCnUseCnRuleSet && "rounded border border-red-500/20 bg-red-500/10"
+              "proxy-group-rule-row grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 rounded border border-white/10 bg-white/[0.04] px-2 py-2",
+              !experimentalCnUseCnRuleSet && "border-red-500/20 bg-red-500/10"
             )}
           >
             <div className="min-w-0 space-y-1">
@@ -447,7 +451,7 @@ export function ProxyGroupsModuleRulesPanel({
                     kinds={["module", "custom"]}
                     currentTarget={{ kind: "module", id: module.id, name: moduleDisplayName }}
                     onMove={(target) => {
-                      if (isRuleSetMoveTarget(target)) {
+                      if (isRuleSetMoveTarget(target) && isModuleRuleMoveTarget(target)) {
                         moveExperimentalCnRule(target);
                       }
                     }}
@@ -483,8 +487,8 @@ export function ProxyGroupsModuleRulesPanel({
       )}
 
       {module.id === "cn" && availableCnCandidateRules.length > 0 && (
-        <div className="border-t border-white/10 px-2 py-2">
-          <div className="mb-1 flex items-center gap-1.5 pl-6 pr-2">
+        <div className="rounded border border-white/10 bg-white/[0.03] px-2 py-2">
+          <div className="mb-2 flex items-center gap-1.5">
             <div className="text-xs font-medium text-white">中国相关子规则集</div>
             <Popover.Root>
               <Popover.Trigger asChild>
@@ -521,7 +525,7 @@ export function ProxyGroupsModuleRulesPanel({
               </Popover.Portal>
             </Popover.Root>
           </div>
-          <div className="space-y-1 px-4">
+          <div className="space-y-1">
             {availableCnCandidateRules.map((rule) => (
               <div
                 key={rule.id}

@@ -4,6 +4,7 @@ import {
   ensureCustomRuleId,
 } from "@subboost/core/rules/custom-rule-utils";
 import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
+import { normalizeProxyGroupAdvancedConfig } from "@subboost/core/proxy-group-advanced";
 import type { ConfigActions } from "../definitions";
 import type { GetState, SetAndGenerateConfig, SetState } from "../store-types";
 
@@ -21,6 +22,7 @@ type CustomActions = Pick<
 
 function normalizeRuleOrderForState(state: {
   enabledProxyGroups: string[];
+  customProxyGroups: Parameters<typeof normalizePersistedRuleOrder>[0]["customProxyGroups"];
   customRules: Parameters<typeof normalizePersistedRuleOrder>[0]["customRules"];
   customRuleSets: Parameters<typeof normalizePersistedRuleOrder>[0]["customRuleSets"];
   builtinRuleEdits: Parameters<typeof normalizePersistedRuleOrder>[0]["builtinRuleEdits"];
@@ -31,6 +33,7 @@ function normalizeRuleOrderForState(state: {
 }): string[] {
   return normalizePersistedRuleOrder({
     enabledModules: state.enabledProxyGroups,
+    customProxyGroups: state.customProxyGroups,
     customRules: state.customRules,
     customRuleSets: state.customRuleSets,
     builtinRuleEdits: state.builtinRuleEdits,
@@ -133,8 +136,11 @@ export function createCustomActions(
           id,
           name: group.name,
           emoji: group.emoji,
+          ...(group.enabled === false ? { enabled: false } : {}),
+          ...(typeof group.description === "string" ? { description: group.description.trim() } : {}),
           groupType: group.groupType,
           ...(group.groupType === "load-balance" && group.strategy ? { strategy: group.strategy } : {}),
+          ...(group.advanced ? { advanced: normalizeProxyGroupAdvancedConfig(group.advanced) } : {}),
         };
         const nextCustomProxyGroups = [
           ...state.customProxyGroups,
@@ -188,9 +194,14 @@ export function createCustomActions(
           prevName && nextName && prevName !== nextName
             ? retargetBuiltinRuleEdits(state.builtinRuleEdits, prevName, nextName)
             : state.builtinRuleEdits;
-        const nextCustomProxyGroups = state.customProxyGroups.map((g) =>
-          g.id === id ? { ...g, ...group } : g,
-        );
+        const nextCustomProxyGroups = state.customProxyGroups.map((g) => {
+          if (g.id !== id) return g;
+          const next = { ...g, ...group };
+          if (typeof group.enabled === "boolean") next.enabled = group.enabled;
+          if (group.advanced) next.advanced = normalizeProxyGroupAdvancedConfig(group.advanced);
+          if (typeof group.description === "string") next.description = group.description.trim();
+          return next;
+        });
         return {
           customRules: nextCustomRules,
           customRuleSets: nextCustomRuleSets,

@@ -119,72 +119,14 @@ describe("validateSubBoostTemplateConfig custom and filtered groups", () => {
       },
       "customProxyGroups.groupType 无效"
     );
-    expectInvalid({ filteredProxyGroups: "bad" as never }, "filteredProxyGroups 必须是数组");
-    expectInvalid({ filteredProxyGroups: [1 as never] }, "filteredProxyGroups 只能包含对象");
+    expectInvalid({ proxyGroupAdvanced: [] as never }, "proxyGroupAdvanced 必须是对象");
     expectInvalid(
       {
-        filteredProxyGroups: [
-          {
-            id: "filtered",
-            name: "Filtered",
-            enabled: "yes" as never,
-            groupType: "select",
-            sourceIds: [],
-            regions: [],
-            excludedNodeNames: [],
-          },
-        ],
+        proxyGroupAdvanced: {
+          missing: {},
+        },
       },
-      "filteredProxyGroups.enabled 必须是布尔值"
-    );
-    expectInvalid(
-      {
-        filteredProxyGroups: [
-          {
-            id: "filtered",
-            name: "Filtered",
-            enabled: true,
-            groupType: "bad" as never,
-            sourceIds: [],
-            regions: [],
-            excludedNodeNames: [],
-          },
-        ],
-      },
-      "filteredProxyGroups.groupType 无效"
-    );
-    expectInvalid(
-      {
-        filteredProxyGroups: [
-          {
-            id: "filtered",
-            name: "Filtered",
-            enabled: true,
-            groupType: "select",
-            sourceIds: [1 as never],
-            regions: [],
-            excludedNodeNames: [],
-          },
-        ],
-      },
-      "filteredProxyGroups.sourceIds 只能包含字符串"
-    );
-    expectInvalid(
-      {
-        filteredProxyGroups: [
-          {
-            id: "filtered",
-            name: "Filtered",
-            enabled: true,
-            groupType: "load-balance",
-            strategy: "bad" as never,
-            sourceIds: [],
-            regions: [],
-            excludedNodeNames: [],
-          },
-        ],
-      },
-      "filteredProxyGroups.strategy 无效"
+      "proxyGroupAdvanced 包含未知代理组"
     );
 
     expect(
@@ -208,17 +150,32 @@ describe("validateSubBoostTemplateConfig custom and filtered groups", () => {
         validConfig({
           filteredProxyGroups: [
             {
-              id: "filtered",
-              name: "Filtered",
+              id: "legacy",
+              name: "Legacy",
               enabled: true,
               groupType: "select",
-              sourceIds: [],
-              regions: ["moon" as never],
-              excludedNodeNames: [],
+              sourceIds: ["source-a"],
+              regions: ["moon" as never, "hk"],
+              excludedNodeNames: ["Node A"],
             },
           ],
         })
       )
-    ).toEqual({ ok: false, error: "filteredProxyGroups.regions 包含未知地区" });
+    ).toMatchObject({
+      ok: true,
+      config: {
+        customProxyGroups: [
+          expect.objectContaining({
+            id: "migrated-filtered-legacy",
+            name: "Legacy",
+            advanced: {
+              sourceIds: ["source-a"],
+              regions: ["hk"],
+              excludedMembers: [{ kind: "node", name: "Node A" }],
+            },
+          }),
+        ],
+      },
+    });
   });
 });

@@ -4,12 +4,12 @@ import type {
   CustomProxyGroup,
   CustomRule,
   CustomRuleSet,
+  ProxyGroupAdvancedConfig,
   TemplateType,
 } from "@subboost/core/types/config";
 import { DEFAULT_BASE_CONFIG_YAML, DEFAULT_SUBBOOST_CONFIG } from "@subboost/core/config/defaults";
 import { getBuiltinTemplateId } from "@subboost/core/templates/builtin";
 import { TEMPLATES } from "@subboost/core/templates";
-import type { FilteredProxyGroup } from "@subboost/core/types/filtered-proxy-group";
 import type { DialerProxyGroup, SubBoostTemplateConfig } from "@subboost/core/types/template-config";
 import {
   isSubscriptionImportError,
@@ -30,7 +30,7 @@ import {
 
 export { DEFAULT_BASE_CONFIG_YAML };
 export type RuleSetDraft = Omit<CustomRuleSet, "target">;
-export type { BuiltinRuleEdits, CustomRuleSet };
+export type { BuiltinRuleEdits, CustomRuleSet, ProxyGroupAdvancedConfig };
 export type { DialerProxyGroup, SubBoostTemplateConfig } from "@subboost/core/types/template-config";
 
 // 预设的中转组名称
@@ -173,7 +173,7 @@ export interface ConfigState {
   enabledProxyGroups: string[];
   hiddenProxyGroups: string[]; // 隐藏的内置代理组（仅影响 UI，不参与生成）
   customProxyGroups: CustomProxyGroup[]; // 自定义分流组
-  filteredProxyGroups: FilteredProxyGroup[]; // 筛选代理组（从节点池派生）
+  proxyGroupAdvanced: Record<string, ProxyGroupAdvancedConfig>; // 内置分流组高级筛选/排序配置
   customRuleSets: CustomRuleSet[]; // 用户新增规则集，统一进入自定义规则块
   builtinRuleEdits: BuiltinRuleEdits; // 内置规则的目标覆盖或禁用状态
   customRules: CustomRule[];
@@ -183,7 +183,7 @@ export interface ConfigState {
   proxyGroupNameOverrides: Record<string, string>;
 
   // 代理组顺序（影响 Clash 客户端中的展示顺序；由可视化预览拖拽维护）
-  // Key 格式：module:<id> / custom:<id> / filtered:<id> / dialer:<id>
+  // Key 格式：module:<id> / custom:<id> / dialer:<id>
   proxyGroupOrder: string[];
 
   // 用户可编辑规则窗口顺序
@@ -257,10 +257,8 @@ export interface ConfigActions {
   // 代理组顺序
   setProxyGroupOrder: (order: string[]) => void;
 
-  // 筛选代理组
-  addFilteredProxyGroup: (group: Omit<FilteredProxyGroup, "id">) => void;
-  removeFilteredProxyGroup: (id: string) => void;
-  updateFilteredProxyGroup: (id: string, group: Partial<FilteredProxyGroup>) => void;
+  // 分流组高级配置
+  updateProxyGroupAdvanced: (moduleId: string, patch: Partial<ProxyGroupAdvancedConfig>) => void;
 
   // 规则集与内置规则编辑
   addModuleRules: (moduleId: string, rules: RuleSetDraft[]) => void;
@@ -340,7 +338,7 @@ export const initialState: ConfigState = {
   enabledProxyGroups: TEMPLATES.minimal.groups,
   hiddenProxyGroups: [],
   customProxyGroups: [], // 自定义分流组
-  filteredProxyGroups: [],
+  proxyGroupAdvanced: {},
   customRuleSets: [],
   builtinRuleEdits: {},
   customRules: [],

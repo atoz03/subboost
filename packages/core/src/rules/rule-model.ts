@@ -1,5 +1,7 @@
 import type { BuiltinRuleEdit, BuiltinRuleEdits, CustomProxyGroup, CustomRuleSet, RuleSetBehavior } from "@subboost/core/types/config";
 import { DEFAULT_LOAD_BALANCE_STRATEGY, isLoadBalanceStrategy } from "@subboost/core/types/config";
+import { normalizeProxyGroupAdvancedConfig } from "@subboost/core/proxy-group-advanced";
+import { normalizeProxyGroupTargetRef } from "@subboost/core/proxy-group-targets";
 
 export const RULE_SET_PATH_RE = /^(geosite|geoip)\/[^/?#\s]+\.mrs$/i;
 
@@ -49,7 +51,7 @@ function normalizeCustomRuleSet(item: unknown): CustomRuleSet | null {
   const id = toTrimmedString(item.id);
   const rawPath = toTrimmedString(item.path);
   const path = normalizeRuleSetPathInput(rawPath);
-  const target = toTrimmedString(item.target);
+  const target = normalizeProxyGroupTargetRef(item.target) ?? toTrimmedString(item.target);
   const behavior = normalizeBehavior(item.behavior);
   if (!id || !behavior || !path || !target || !isValidRuleSetPathOrUrl(path)) return null;
   const name = toTrimmedString(item.name) || id;
@@ -66,7 +68,7 @@ function normalizeCustomRuleSet(item: unknown): CustomRuleSet | null {
 
 function normalizeBuiltinRuleEdit(item: unknown): BuiltinRuleEdit | null {
   if (!isRecord(item)) return null;
-  const target = toTrimmedString(item.target);
+  const target = normalizeProxyGroupTargetRef(item.target) ?? toTrimmedString(item.target);
   const enabled = item.enabled === false ? false : undefined;
   if (!target && enabled !== false) return null;
   return {
@@ -97,6 +99,8 @@ function normalizeCustomProxyGroups(value: unknown): CustomProxyGroup[] {
     const id = toTrimmedString(rawGroup.id);
     const name = toTrimmedString(rawGroup.name);
     const emoji = toTrimmedString(rawGroup.emoji);
+    const enabled = rawGroup.enabled === false ? false : undefined;
+    const description = toTrimmedString(rawGroup.description);
     const groupType = toTrimmedString(rawGroup.groupType);
     if (!id || !name) continue;
     if (
@@ -114,6 +118,8 @@ function normalizeCustomProxyGroups(value: unknown): CustomProxyGroup[] {
       id,
       name,
       emoji,
+      ...(enabled === false ? { enabled: false } : {}),
+      ...(description ? { description } : {}),
       groupType,
       ...(groupType === "load-balance"
         ? {
@@ -122,6 +128,7 @@ function normalizeCustomProxyGroups(value: unknown): CustomProxyGroup[] {
               : DEFAULT_LOAD_BALANCE_STRATEGY,
           }
         : {}),
+      advanced: normalizeProxyGroupAdvancedConfig(rawGroup.advanced),
     });
   }
 

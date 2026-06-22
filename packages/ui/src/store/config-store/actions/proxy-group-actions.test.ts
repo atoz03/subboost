@@ -40,11 +40,12 @@ describe("createProxyGroupActions", () => {
       "",
       "module:ai",
       "filtered:fast",
+      "name:External",
       // Intentionally force a non-string runtime value to verify invalid input is ignored.
       123 as unknown as string,
     ]);
 
-    expect(getState().proxyGroupOrder).toEqual(["module:ai", "filtered:fast"]);
+    expect(getState().proxyGroupOrder).toEqual(["module:ai", "name:External"]);
 
     actions.setProxyGroupOrder("bad" as never);
     expect(getState().proxyGroupOrder).toEqual([]);
@@ -95,212 +96,42 @@ describe("createProxyGroupActions", () => {
     expect(getState()).toBe(beforeRestore);
   });
 
-  it("adds, updates, renames, and removes filtered proxy groups", () => {
-    vi.spyOn(Date, "now").mockReturnValue(1700000000000);
+  it("updates advanced config for builtin proxy groups", () => {
     const { actions, getState } = createHarness({
-      filteredProxyGroups: [
-        {
-          id: "filtered-1",
-          name: "Old Filter",
-          enabled: true,
-          groupType: "select",
-          sourceIds: [],
-          regions: [],
-          excludedNodeNames: [],
-        },
-      ],
-      customRules: [{ id: "rule-1", type: "DOMAIN", value: "example.com", target: "Old Filter" }],
-      dialerProxyGroups: [
-        {
-          id: "dialer-1",
-          name: "Relay",
-          relayNodes: ["Old Filter", "Node A"],
-          targetNodes: ["Node A"],
-        },
-        {
-          id: "dialer-2",
-          name: "Broken",
-          relayNodes: "bad",
-          targetNodes: ["Old Filter"],
-        },
-      ],
-    });
-
-    actions.addFilteredProxyGroup({
-      name: "Fast Nodes",
-      enabled: true,
-      groupType: "load-balance",
-      strategy: "bad" as never,
-      emoji: "⚡",
-      sourceIds: "bad" as never,
-      regions: ["us"],
-      excludeRegex: "Test",
-      excludedNodeNames: [" Node A ", "Node A", "", "Node B"],
-    });
-
-    expect(getState().filteredProxyGroups.at(-1)).toMatchObject({
-      id: "filtered-group-1700000000000",
-      name: "Fast Nodes",
-      enabled: true,
-      groupType: "load-balance",
-      strategy: "consistent-hashing",
-      emoji: "⚡",
-      sourceIds: [],
-      regions: ["us"],
-      excludeRegex: "Test",
-      excludedNodeNames: ["Node A", "Node B"],
-    });
-
-    actions.addFilteredProxyGroup({
-      name: "Plain Group",
-      enabled: false,
-      groupType: "invalid" as never,
-      emoji: 123 as never,
-      sourceIds: ["source-1"],
-      regions: "bad" as never,
-      includeRegex: "HK",
-      excludeRegex: 42 as never,
-      excludedNodeNames: "bad" as never,
-    });
-
-    expect(getState().filteredProxyGroups.at(-1)).toMatchObject({
-      id: "filtered-group-1700000000000",
-      name: "Plain Group",
-      enabled: false,
-      groupType: "select",
-      sourceIds: ["source-1"],
-      regions: [],
-      includeRegex: "HK",
-      excludedNodeNames: [],
-    });
-    expect(getState().filteredProxyGroups.at(-1)).not.toHaveProperty("strategy");
-    expect(getState().filteredProxyGroups.at(-1)).toHaveProperty("emoji", undefined);
-
-    actions.updateFilteredProxyGroup("filtered-1", {
-      name: "New Filter",
-      groupType: "load-balance",
-      strategy: "round-robin",
-      excludedNodeNames: ["Node C", "Node C"],
-    });
-
-    expect(getState().filteredProxyGroups[0]).toMatchObject({
-      id: "filtered-1",
-      name: "New Filter",
-      groupType: "load-balance",
-      strategy: "round-robin",
-      excludedNodeNames: ["Node C"],
-    });
-    expect(getState().customRules[0].target).toBe("New Filter");
-    expect(getState().dialerProxyGroups[0].relayNodes).toEqual(["New Filter", "Node A"]);
-    expect(getState().dialerProxyGroups[1].relayNodes).toBe("bad");
-
-    actions.updateFilteredProxyGroup("filtered-1", {
-      groupType: "direct-first",
-      enabled: "bad" as never,
-      includeRegex: null as never,
-      excludeRegex: null as never,
-      sourceIds: "bad" as never,
-      regions: "bad" as never,
-    });
-
-    expect(getState().filteredProxyGroups[0]).toMatchObject({
-      groupType: "direct-first",
-      enabled: true,
-      includeRegex: undefined,
-      excludeRegex: undefined,
-      sourceIds: [],
-      regions: [],
-    });
-    expect(getState().filteredProxyGroups[0]).toHaveProperty("strategy", undefined);
-
-    actions.updateFilteredProxyGroup("filtered-1", {
-      enabled: false,
-      emoji: "N",
-      groupType: "select",
-      sourceIds: ["source-2"],
-      regions: ["jp"],
-      includeRegex: "JP",
-      excludeRegex: "Relay",
-    });
-
-    expect(getState().filteredProxyGroups[0]).toMatchObject({
-      enabled: false,
-      emoji: "N",
-      groupType: "select",
-      sourceIds: ["source-2"],
-      regions: ["jp"],
-      includeRegex: "JP",
-      excludeRegex: "Relay",
-      strategy: undefined,
-    });
-
-    actions.updateFilteredProxyGroup("filtered-1", {
-      groupType: "load-balance",
-      strategy: undefined,
-    });
-    expect(getState().filteredProxyGroups[0].strategy).toBe("consistent-hashing");
-
-    const beforeMissingUpdate = getState();
-    actions.updateFilteredProxyGroup("", { name: "Ignored" });
-    actions.updateFilteredProxyGroup("missing", { name: "Ignored" });
-    expect(getState()).toBe(beforeMissingUpdate);
-
-    actions.removeFilteredProxyGroup(" filtered-1 ");
-    actions.removeFilteredProxyGroup("");
-    expect(getState().filteredProxyGroups.map((group: { id: string }) => group.id)).toEqual([
-      "filtered-group-1700000000000",
-      "filtered-group-1700000000000",
-    ]);
-  });
-
-  it("preserves filtered proxy group values when partial updates are invalid or omitted", () => {
-    const { actions, getState } = createHarness({
-      filteredProxyGroups: [
-        {
-          id: "filtered-1",
-          name: "Stable",
-          emoji: "S",
-          enabled: false,
-          groupType: "load-balance",
-          strategy: "round-robin",
+      proxyGroupAdvanced: {
+        ai: {
           sourceIds: ["source-1"],
           regions: ["hk"],
           includeRegex: "HK",
-          excludeRegex: "Test",
-          excludedNodeNames: "bad",
+          excludedMembers: [{ kind: "node", name: "Old" }],
         },
+      },
+    });
+
+    actions.updateProxyGroupAdvanced(" ai ", {
+      sourceIds: [" source-2 ", "", "source-2"],
+      regions: "bad" as never,
+      includeRegex: "Node",
+      excludeRegex: "Test",
+      excludedMembers: [
+        { kind: "node", name: " Node A " },
+        { kind: "node", name: "Node A" },
+        { kind: "dialer", id: "relay" } as never,
       ],
     });
 
-    actions.updateFilteredProxyGroup("filtered-1", {
-      enabled: "bad" as never,
-      emoji: 123 as never,
-      groupType: "load-balance",
-      strategy: "bad" as never,
-      includeRegex: undefined,
-      excludeRegex: undefined,
-      sourceIds: undefined,
-      regions: undefined,
-    });
-
-    expect(getState().filteredProxyGroups[0]).toMatchObject({
-      name: "Stable",
-      emoji: "S",
-      enabled: false,
-      groupType: "load-balance",
-      strategy: "round-robin",
-      sourceIds: ["source-1"],
-      regions: ["hk"],
-      includeRegex: "HK",
+    expect(getState().proxyGroupAdvanced.ai).toMatchObject({
+      sourceIds: ["source-2"],
+      includeRegex: "Node",
       excludeRegex: "Test",
-      excludedNodeNames: [],
+      excludedMembers: [{ kind: "node", name: "Node A" }],
     });
+    expect(getState().proxyGroupAdvanced.ai.regions).toBeUndefined();
 
-    actions.updateFilteredProxyGroup("filtered-1", {
-      groupType: "load-balance",
-      strategy: undefined,
-    });
-    expect(getState().filteredProxyGroups[0].strategy).toBe("round-robin");
+    const beforeMissingUpdate = getState();
+    actions.updateProxyGroupAdvanced("", { includeRegex: "Ignored" });
+    actions.updateProxyGroupAdvanced("missing", { includeRegex: "Ignored" });
+    expect(getState()).toBe(beforeMissingUpdate);
   });
 
   it("adds, updates, removes, and restores module rules", () => {
@@ -479,6 +310,58 @@ describe("createProxyGroupActions", () => {
     ]);
 
     expect(getState()).toEqual(before);
+  });
+
+  it("adds, updates, moves, and removes custom rule sets for custom groups", () => {
+    const { actions, getState } = createHarness({
+      enabledProxyGroups: ["select", "auto"],
+      customProxyGroups: [
+        {
+          id: "custom-1",
+          name: "Custom",
+          emoji: "",
+          groupType: "select",
+        },
+        {
+          id: "custom-2",
+          name: "Target",
+          emoji: "",
+          groupType: "select",
+        },
+      ],
+      customRuleSets: [],
+    });
+
+    actions.addModuleRules("custom-1", [
+      { id: "telegram", name: "Telegram", behavior: "ipcidr", path: "geoip/telegram.mrs" },
+    ]);
+
+    expect(getState().customRuleSets).toEqual([
+      {
+        id: "telegram",
+        name: "Telegram",
+        behavior: "ipcidr",
+        path: "geoip/telegram.mrs",
+        target: "Custom",
+        noResolve: true,
+      },
+    ]);
+
+    actions.updateModuleRule("custom-1", "telegram", {
+      name: "Telegram Custom",
+      path: "geoip/telegram.mrs",
+    });
+    expect(getState().customRuleSets[0]).toMatchObject({
+      id: "telegram",
+      name: "Telegram Custom",
+      target: "Custom",
+    });
+
+    actions.moveModuleRule("custom-1", "telegram", { kind: "custom", id: "custom-2" });
+    expect(getState().customRuleSets[0].target).toBe("Target");
+
+    actions.removeModuleRule("custom-2", "telegram");
+    expect(getState().customRuleSets).toEqual([]);
   });
 
   it("restores all default module rules for one module and accepts edit warnings", () => {

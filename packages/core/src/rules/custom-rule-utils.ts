@@ -39,12 +39,17 @@ function toSlug(value: string): string {
   return parts.length > 0 ? parts.join("") : "item";
 }
 
+function customRuleTargetToString(target: CustomRule["target"]): string {
+  if (typeof target === "string") return target;
+  return `${target.kind}:${target.id}`;
+}
+
 function buildDeterministicCustomRuleId(rule: Pick<CustomRule, "type" | "value" | "target">, index: number): string {
   return [
     "custom-rule",
     toSlug(rule.type),
     toSlug(rule.value).slice(0, 24),
-    toSlug(rule.target).slice(0, 24),
+    toSlug(customRuleTargetToString(rule.target)).slice(0, 24),
     String(index + 1),
   ].join("-");
 }

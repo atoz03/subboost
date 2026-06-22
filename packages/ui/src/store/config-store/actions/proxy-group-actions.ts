@@ -1,28 +1,29 @@
-import type { FilteredProxyGroup } from "@subboost/core/types/filtered-proxy-group";
 import {
-  DEFAULT_LOAD_BALANCE_STRATEGY,
-  isLoadBalanceStrategy,
-  type BuiltinRuleEdits,
-  type CustomProxyGroup,
   type CustomRuleSet,
-  type RuleSetBehavior,
 } from "@subboost/core/types/config";
+import { normalizeProxyGroupAdvancedConfig } from "@subboost/core/proxy-group-advanced";
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-groups";
-import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
 import { getModuleRuleOrderKey, isPresetModuleRule } from "@subboost/core/generator/module-rules";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
-import { isValidRuleSetPathOrUrl, normalizeRuleSetPathInput } from "@subboost/core/rules/rule-model";
 import type { ConfigActions, RuleSetDraft } from "../definitions";
 import type { GetState, SetAndGenerateConfig, SetState } from "../store-types";
+import {
+  appendUniqueCustomRuleSets,
+  findBuiltinRuleEditKeyByTarget,
+  normalizeRuleOrderForState,
+  normalizeRuleSetDraft,
+  resolveMoveTargetName,
+  resolveRuleSetContainerTargetName,
+  retargetBuiltinRuleEdits,
+  updateBuiltinRuleEdit,
+} from "./proxy-group-rule-set-helpers";
 
 type ProxyGroupActions = Pick<
   ConfigActions,
   | "setProxyGroupOrder"
   | "hideProxyGroup"
   | "restoreHiddenProxyGroup"
-  | "addFilteredProxyGroup"
-  | "removeFilteredProxyGroup"
-  | "updateFilteredProxyGroup"
+  | "updateProxyGroupAdvanced"
   | "addModuleRules"
   | "updateModuleRule"
   | "removeModuleRule"
@@ -53,134 +54,13 @@ function isBuiltinProxyGroup(moduleId: string): boolean {
   return PROXY_GROUP_MODULES.some((proxyModule) => proxyModule.id === moduleId);
 }
 
-function normalizeRuleSetDraft(rule: RuleSetDraft): RuleSetDraft | null {
-  if (!rule || typeof rule.id !== "string" || typeof rule.path !== "string") return null;
-  const id = rule.id.trim();
-  const path = normalizeRuleSetPathInput(rule.path);
-  if (!id || !path || !isValidRuleSetPathOrUrl(path)) return null;
-  const behavior: RuleSetBehavior = rule.behavior === "ipcidr" || path.toLowerCase().startsWith("geoip/")
-    ? "ipcidr"
-    : "domain";
-  return {
-    id,
-    name: typeof rule.name === "string" && rule.name.trim() ? rule.name.trim() : id,
-    behavior,
-    path,
-    ...(rule.noResolve || behavior === "ipcidr" ? { noResolve: true } : {}),
-  };
-}
-
-function normalizeRuleOrderForState(state: {
-  enabledProxyGroups: string[];
-  customRules: Parameters<typeof normalizePersistedRuleOrder>[0]["customRules"];
-  customRuleSets: Parameters<typeof normalizePersistedRuleOrder>[0]["customRuleSets"];
-  builtinRuleEdits: Parameters<typeof normalizePersistedRuleOrder>[0]["builtinRuleEdits"];
-  proxyGroupNameOverrides: Record<string, string>;
-  experimentalCnUseCnRuleSet: boolean;
-  cnIpNoResolve: boolean;
-  ruleOrder: string[];
-}): string[] {
-  return normalizePersistedRuleOrder({
-    enabledModules: state.enabledProxyGroups,
-    customRules: state.customRules,
-    customRuleSets: state.customRuleSets,
-    builtinRuleEdits: state.builtinRuleEdits,
-    proxyGroupNameOverrides: state.proxyGroupNameOverrides,
-    experimentalCnUseCnRuleSet: state.experimentalCnUseCnRuleSet,
-    cnIpNoResolve: state.cnIpNoResolve,
-    ruleOrder: state.ruleOrder,
-  });
-}
-
-function resolveModuleTargetName(moduleId: string, overrides?: Record<string, string>): string | null {
-  const proxyModule = PROXY_GROUP_MODULES.find((item) => item.id === moduleId);
-  if (!proxyModule) return null;
-  return resolveProxyGroupModuleName(proxyModule, overrides?.[moduleId]);
-}
-
-function resolveMoveTargetName(
-  target: { kind: "module" | "custom"; id: string },
-  customProxyGroups: CustomProxyGroup[],
-  proxyGroupNameOverrides?: Record<string, string>
-): string | null {
-  if (target.kind === "module") return resolveModuleTargetName(target.id, proxyGroupNameOverrides);
-  const group = customProxyGroups.find((item) => item.id === target.id);
-  return group?.name?.trim() || null;
-}
-
-function compactBuiltinRuleEdits(edits: BuiltinRuleEdits): BuiltinRuleEdits {
-  const next: BuiltinRuleEdits = {};
-  for (const [key, edit] of Object.entries(edits || {})) {
-    const target = typeof edit?.target === "string" ? edit.target.trim() : "";
-    const enabled = edit?.enabled === false ? false : undefined;
-    if (!target && enabled !== false) continue;
-    next[key] = {
-      ...(target ? { target } : {}),
-      ...(enabled === false ? { enabled: false } : {}),
-    };
-  }
-  return next;
-}
-
-function updateBuiltinRuleEdit(
-  edits: BuiltinRuleEdits,
-  key: string,
-  patch: { target?: string | null; enabled?: false | true | null }
-): BuiltinRuleEdits {
-  const prev = edits?.[key] || {};
-  const next = { ...prev };
-  if ("target" in patch) {
-    const target = typeof patch.target === "string" ? patch.target.trim() : "";
-    if (target) next.target = target;
-    else delete next.target;
-  }
-  if ("enabled" in patch) {
-    if (patch.enabled === false) next.enabled = false;
-    else delete next.enabled;
-  }
-  return compactBuiltinRuleEdits({ ...(edits || {}), [key]: next });
-}
-
-function retargetBuiltinRuleEdits(edits: BuiltinRuleEdits, from: string, to: string): BuiltinRuleEdits {
-  if (!from || from === to) return edits;
-  let changed = false;
-  const next: BuiltinRuleEdits = {};
-  for (const [key, edit] of Object.entries(edits || {})) {
-    if (edit?.target === from) {
-      next[key] = { ...edit, target: to };
-      changed = true;
-    } else {
-      next[key] = edit;
-    }
-  }
-  return changed ? compactBuiltinRuleEdits(next) : edits;
-}
-
-function findBuiltinRuleEditKeyByTarget(edits: BuiltinRuleEdits, target: string, ruleId: string): string | null {
-  if (!target || !ruleId) return null;
-  for (const [key, edit] of Object.entries(edits || {})) {
-    if (edit?.target !== target) continue;
-    const parts = key.split(":");
-    if (parts.length !== 3 || parts[0] !== "module") continue;
-    if (parts[2] === ruleId) return key;
-  }
-  return null;
-}
-
-function appendUniqueCustomRuleSets(
-  existing: CustomRuleSet[],
-  drafts: RuleSetDraft[],
-  target: string
-): CustomRuleSet[] {
-  const seen = new Set(existing.map((item) => item.id));
-  const next = [...existing];
-  for (const draft of drafts) {
-    const ruleSet = normalizeRuleSetDraft(draft);
-    if (!ruleSet || seen.has(ruleSet.id)) continue;
-    seen.add(ruleSet.id);
-    next.push({ ...ruleSet, target });
-  }
-  return next;
+function isSupportedProxyGroupOrderKey(key: string): boolean {
+  return (
+    key.startsWith("module:") ||
+    key.startsWith("custom:") ||
+    key.startsWith("dialer:") ||
+    key.startsWith("name:")
+  );
 }
 
 export function createProxyGroupActions(
@@ -195,6 +75,7 @@ export function createProxyGroupActions(
             .filter((k) => typeof k === "string")
             .map((k) => k.trim())
             .filter(Boolean)
+            .filter(isSupportedProxyGroupOrderKey)
         : [];
 
       const seen = new Set<string>();
@@ -265,126 +146,17 @@ export function createProxyGroupActions(
       });
     },
 
-    addFilteredProxyGroup: (group: Omit<FilteredProxyGroup, "id">) => {
-      const id = `filtered-group-${Date.now()}`;
-      const groupType =
-        group.groupType === "url-test" ||
-        group.groupType === "fallback" ||
-        group.groupType === "load-balance" ||
-        group.groupType === "direct-first" ||
-        group.groupType === "reject-first"
-          ? group.groupType
-          : "select";
-      const strategy =
-        groupType === "load-balance"
-          ? isLoadBalanceStrategy(group.strategy)
-            ? group.strategy
-            : DEFAULT_LOAD_BALANCE_STRATEGY
-          : undefined;
-      const next: FilteredProxyGroup = {
-        id,
-        emoji: typeof group.emoji === "string" ? group.emoji : undefined,
-        name: group.name,
-        enabled: Boolean(group.enabled),
-        groupType,
-        ...(strategy ? { strategy } : {}),
-        sourceIds: Array.isArray(group.sourceIds) ? group.sourceIds : [],
-        regions: Array.isArray(group.regions) ? group.regions : [],
-        includeRegex: typeof group.includeRegex === "string" ? group.includeRegex : undefined,
-        excludeRegex: typeof group.excludeRegex === "string" ? group.excludeRegex : undefined,
-        excludedNodeNames: normalizeStringList(group.excludedNodeNames),
-      };
-
-      setAndGenerateConfig((state) => ({
-        filteredProxyGroups: [...state.filteredProxyGroups, next],
-      }));
-    },
-
-    removeFilteredProxyGroup: (id: string) => {
-      const gid = (id || "").trim();
-      if (!gid) return;
-      setAndGenerateConfig((state) => ({
-        filteredProxyGroups: state.filteredProxyGroups.filter((g) => g.id !== gid),
-      }));
-    },
-
-    updateFilteredProxyGroup: (id: string, group: Partial<FilteredProxyGroup>) => {
-      const gid = (id || "").trim();
-      if (!gid) return;
+    updateProxyGroupAdvanced: (moduleId, patch) => {
+      const id = (moduleId || "").trim();
+      if (!id || !isBuiltinProxyGroup(id)) return;
       setAndGenerateConfig((state) => {
-        const prevGroup = state.filteredProxyGroups.find((g) => g.id === gid);
-        if (!prevGroup) return state;
-
-        const prevName = typeof prevGroup.name === "string" ? prevGroup.name : "";
-        const nextName = typeof group.name === "string" ? group.name : prevName;
-        const didRename = Boolean(prevName && nextName && prevName !== nextName);
-
-        const nextFilteredProxyGroups = state.filteredProxyGroups.map((g) => {
-          if (g.id !== gid) return g;
-
-          const nextGroupType =
-            group.groupType === "url-test" ||
-            group.groupType === "fallback" ||
-            group.groupType === "load-balance" ||
-            group.groupType === "direct-first" ||
-            group.groupType === "reject-first" ||
-            group.groupType === "select"
-              ? group.groupType
-              : g.groupType;
-          const nextStrategy =
-            nextGroupType === "load-balance"
-              ? isLoadBalanceStrategy(group.strategy)
-                ? group.strategy
-                : isLoadBalanceStrategy(g.strategy)
-                  ? g.strategy
-                  : DEFAULT_LOAD_BALANCE_STRATEGY
-              : undefined;
-
-          return {
-            ...g,
-            ...group,
-            enabled: typeof group.enabled === "boolean" ? group.enabled : g.enabled,
-            emoji: typeof group.emoji === "string" ? group.emoji : g.emoji,
-            groupType: nextGroupType,
-            ...(nextStrategy ? { strategy: nextStrategy } : { strategy: undefined }),
-            sourceIds: Array.isArray(group.sourceIds) ? group.sourceIds : g.sourceIds,
-            regions: Array.isArray(group.regions) ? group.regions : g.regions,
-            includeRegex:
-              typeof group.includeRegex === "string"
-                ? group.includeRegex
-                : group.includeRegex === undefined
-                  ? g.includeRegex
-                  : g.includeRegex,
-            excludeRegex:
-              typeof group.excludeRegex === "string"
-                ? group.excludeRegex
-                : group.excludeRegex === undefined
-                  ? g.excludeRegex
-                  : g.excludeRegex,
-            excludedNodeNames: Array.isArray(group.excludedNodeNames)
-              ? normalizeStringList(group.excludedNodeNames)
-              : Array.isArray(g.excludedNodeNames)
-                ? normalizeStringList(g.excludedNodeNames)
-                : [],
-          };
-        });
-
-        if (!didRename) {
-          return { filteredProxyGroups: nextFilteredProxyGroups };
-        }
-
+        const prev = normalizeProxyGroupAdvancedConfig(state.proxyGroupAdvanced?.[id]);
+        const next = normalizeProxyGroupAdvancedConfig({ ...prev, ...(patch || {}) });
         return {
-          filteredProxyGroups: nextFilteredProxyGroups,
-          // 筛选组名称可能被其他功能（自定义规则 / 中转组）引用：改名时同步更新引用，避免产生“指向不存在的组”。
-          customRules: state.customRules.map((r) =>
-            r.target === prevName ? { ...r, target: nextName } : r
-          ),
-          dialerProxyGroups: state.dialerProxyGroups.map((dg) => ({
-            ...dg,
-            relayNodes: Array.isArray(dg.relayNodes)
-              ? dg.relayNodes.map((n) => (n === prevName ? nextName : n))
-              : dg.relayNodes,
-          })),
+          proxyGroupAdvanced: {
+            ...(state.proxyGroupAdvanced || {}),
+            [id]: next,
+          },
         };
       });
     },
@@ -395,9 +167,11 @@ export function createProxyGroupActions(
       if (!Array.isArray(rules) || rules.length === 0) return;
 
       setAndGenerateConfig((state) => {
-        const target =
-          resolveModuleTargetName(id, state.proxyGroupNameOverrides) ||
-          state.customProxyGroups.find((group) => group.id === id)?.name?.trim();
+        const target = resolveRuleSetContainerTargetName(
+          id,
+          state.customProxyGroups,
+          state.proxyGroupNameOverrides,
+        );
         if (!target) return state;
         const proxyModule = PROXY_GROUP_MODULES.find((item) => item.id === id);
         let nextBuiltinRuleEdits = state.builtinRuleEdits;
@@ -443,9 +217,11 @@ export function createProxyGroupActions(
       if (!id || !rid) return;
 
       setAndGenerateConfig((state) => {
-        const target =
-          resolveModuleTargetName(id, state.proxyGroupNameOverrides) ||
-          state.customProxyGroups.find((group) => group.id === id)?.name?.trim();
+        const target = resolveRuleSetContainerTargetName(
+          id,
+          state.customProxyGroups,
+          state.proxyGroupNameOverrides,
+        );
         if (!target) return state;
         const index = state.customRuleSets.findIndex((item) => item.id === rid && item.target === target);
         if (index < 0) return state;
@@ -490,9 +266,11 @@ export function createProxyGroupActions(
           };
         }
 
-        const target =
-          resolveModuleTargetName(id, state.proxyGroupNameOverrides) ||
-          state.customProxyGroups.find((group) => group.id === id)?.name?.trim();
+        const target = resolveRuleSetContainerTargetName(
+          id,
+          state.customProxyGroups,
+          state.proxyGroupNameOverrides,
+        );
         if (!target) return state;
         const movedBuiltinKey = findBuiltinRuleEditKeyByTarget(state.builtinRuleEdits, target, rid);
         if (movedBuiltinKey) {
@@ -528,12 +306,19 @@ export function createProxyGroupActions(
 
       setAndGenerateConfig((state) => {
         const sourceModule = PROXY_GROUP_MODULES.find((m) => m.id === sourceId);
-        const targetName = resolveMoveTargetName(target, state.customProxyGroups, state.proxyGroupNameOverrides);
+        const targetName = resolveMoveTargetName(
+          target,
+          state.customProxyGroups,
+          state.proxyGroupNameOverrides,
+        );
         if (!targetName) return state;
-        const sourceTarget =
-          resolveModuleTargetName(sourceId, state.proxyGroupNameOverrides) ||
-          state.customProxyGroups.find((group) => group.id === sourceId)?.name?.trim();
+        const sourceTarget = resolveRuleSetContainerTargetName(
+          sourceId,
+          state.customProxyGroups,
+          state.proxyGroupNameOverrides,
+        );
         if (!sourceTarget) return state;
+        if (sourceTarget === targetName) return state;
         if (target.kind === "module" && targetId === sourceId) return state;
 
         let nextEnabledProxyGroups = state.enabledProxyGroups;
