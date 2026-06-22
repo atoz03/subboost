@@ -28,6 +28,14 @@ vi.mock("react", async (importOriginal) => {
       if (stateMock.enabled) return factory();
       return actual.useMemo(factory, deps ?? []);
     },
+    useEffect: (effect: React.EffectCallback, deps?: React.DependencyList) => {
+      if (stateMock.enabled) return undefined;
+      return actual.useEffect(effect, deps);
+    },
+    useRef: (initial: unknown) => {
+      if (stateMock.enabled) return { current: initial };
+      return actual.useRef(initial);
+    },
     useState: (initial: unknown) => {
       if (!stateMock.enabled) return actual.useState(initial);
       const index = stateMock.callIndex++;
@@ -209,11 +217,23 @@ describe("ProxyGroupsCategories", () => {
     };
   });
 
-  it("renders visible and hidden modules and forwards basic config changes", () => {
+  it("opens only the custom category by default when custom groups exist", () => {
     renderCategories();
 
+    expect(mocks.captures.customPanelRendered).toBe(true);
+    expect(mocks.captures.moduleCards).toHaveLength(0);
+
+    mocks.store.customProxyGroups = [];
+    renderCategories();
+    expect(mocks.captures.customPanelRendered).toBe(false);
+    expect(mocks.captures.moduleCards).toHaveLength(0);
+  });
+
+  it("renders visible and hidden modules and forwards basic config changes", () => {
+    renderCategories({ 1: new Set(["core"]) });
+
     expect(mocks.captures.inputs).toHaveLength(0);
-    expect(renderCategories().html).toContain("https://rules.example/base/");
+    expect(renderCategories({ 1: new Set(["core"]) }).html).toContain("https://rules.example/base/");
     expect(mocks.store.setRuleProviderBaseUrl).not.toHaveBeenCalled();
 
     expect(mocks.captures.moduleCards).toHaveLength(1);
@@ -234,7 +254,7 @@ describe("ProxyGroupsCategories", () => {
   });
 
   it("handles module card actions, confirmations, and rule movement", async () => {
-    const { setters } = renderCategories();
+    const { setters } = renderCategories({ 1: new Set(["core"]) });
     const card = mocks.captures.moduleCards[0];
 
     await card.onToggleEnabled();
@@ -275,7 +295,7 @@ describe("ProxyGroupsCategories", () => {
   });
 
   it("renames modules and adds rules to custom groups with duplicate guards", () => {
-    const { setters } = renderCategories({ 2: "auto", 3: "Custom" });
+    const { setters } = renderCategories({ 1: new Set(["core"]), 2: "auto", 3: "Custom" });
     const card = mocks.captures.moduleCards[0];
 
     card.onStartEditing();
@@ -288,15 +308,15 @@ describe("ProxyGroupsCategories", () => {
     card.onCancelEditing();
     expect(setters[2]).toHaveBeenCalledWith(null);
 
-    renderCategories({ 2: "auto", 3: "" });
+    renderCategories({ 1: new Set(["core"]), 2: "auto", 3: "" });
     mocks.captures.moduleCards[0].onCommitEditing();
     expect(mocks.store.clearProxyGroupNameOverride).toHaveBeenCalledWith("auto");
 
-    renderCategories({ 2: "auto", 3: "Auto" });
+    renderCategories({ 1: new Set(["core"]), 2: "auto", 3: "Auto" });
     mocks.captures.moduleCards[0].onCommitEditing();
     expect(mocks.store.clearProxyGroupNameOverride).toHaveBeenCalledWith("auto");
 
-    renderCategories({ 2: "auto", 3: "Unique" });
+    renderCategories({ 1: new Set(["core"]), 2: "auto", 3: "Unique" });
     mocks.captures.moduleCards[0].onCommitEditing();
     expect(mocks.store.setProxyGroupNameOverride).toHaveBeenCalledWith("auto", "Unique");
 
@@ -306,12 +326,12 @@ describe("ProxyGroupsCategories", () => {
 
     mocks.store.customRuleSets = [{ id: "geo", name: "Geo", behavior: "domain", path: "geo.txt", target: "Custom" }];
     mocks.store.addModuleRules.mockClear();
-    renderCategories();
+    renderCategories({ 1: new Set(["core"]) });
     mocks.captures.moduleCards[0].onAddRuleToCustomGroup("custom-1", customRule);
     expect(mocks.store.addModuleRules).toHaveBeenCalledWith("custom-1", [customRule]);
 
     mocks.store.customProxyGroups = [{ id: "custom-1", name: "Custom" }];
-    renderCategories();
+    renderCategories({ 1: new Set(["core"]) });
     mocks.captures.moduleCards[0].onAddRuleToCustomGroup("missing", customRule);
     expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
 

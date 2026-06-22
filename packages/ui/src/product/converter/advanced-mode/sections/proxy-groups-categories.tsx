@@ -37,6 +37,7 @@ import { ProxyGroupsModuleCard } from "./proxy-groups-module-card";
 
 const PROXY_GROUP_SECTION_LABEL_ROW_CLASS = "flex min-h-7 items-center gap-2";
 const PROXY_GROUP_SECTION_LABEL_CLASS = "text-xs text-white/50";
+const CUSTOM_CATEGORY_ID = "custom";
 
 export function ProxyGroupsCategories() {
   const {
@@ -77,7 +78,8 @@ export function ProxyGroupsCategories() {
 
   const [expandedCategories, setExpandedCategories] = React.useState<
     Set<string>
-  >(new Set(["core", "service"]));
+  >(new Set(customProxyGroups.length > 0 ? [CUSTOM_CATEGORY_ID] : []));
+  const didApplyCustomCategoryDefault = React.useRef(customProxyGroups.length > 0);
   const [editingModuleId, setEditingModuleId] = React.useState<string | null>(
     null,
   );
@@ -85,6 +87,17 @@ export function ProxyGroupsCategories() {
   const [expandedModuleRules, setExpandedModuleRules] = React.useState<
     Set<string>
   >(new Set());
+  React.useEffect(() => {
+    if (didApplyCustomCategoryDefault.current || customProxyGroups.length === 0) return;
+    didApplyCustomCategoryDefault.current = true;
+    setExpandedCategories((prev) => {
+      if (prev.has(CUSTOM_CATEGORY_ID)) return prev;
+      const next = new Set(prev);
+      next.add(CUSTOM_CATEGORY_ID);
+      return next;
+    });
+  }, [customProxyGroups.length]);
+
   const toggleCategory = (category: string) => {
     setExpandedCategories((prev) => {
       const next = new Set(prev);
