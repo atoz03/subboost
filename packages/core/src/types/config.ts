@@ -134,7 +134,6 @@ export interface ClashConfig {
   "unified-delay"?: boolean;
   "tcp-concurrent"?: boolean;
   "find-process-mode"?: string;
-  "global-client-fingerprint"?: string;
   ipv6?: boolean;
   
   dns?: DNSConfig;

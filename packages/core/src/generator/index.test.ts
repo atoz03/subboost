@@ -165,7 +165,7 @@ describe("generateClashConfig", () => {
     ).toThrow("基础和 DNS 配置 YAML 解析失败");
   });
 
-  it("applies generation-time safeguards for listeners, dialer groups, and global fingerprints", () => {
+  it("applies generation-time safeguards for listeners and dialer groups", () => {
     const config = generateClashConfig({
       nodes: [
         ssNode({ name: "Relay", server: "relay.example.com" }),
@@ -208,7 +208,6 @@ describe("generateClashConfig", () => {
       ],
       userConfig: {
         dnsYaml: [
-          "global-client-fingerprint: firefox",
           "listeners:",
           "  - name: base",
           "    type: mixed",
@@ -224,7 +223,6 @@ describe("generateClashConfig", () => {
 
     expect(config.proxies?.map((proxy) => proxy.name)).toEqual(["Relay", "Target"]);
     expect(config.proxies?.find((proxy) => proxy.name === "Target")).toMatchObject({
-      "client-fingerprint": "firefox",
       "reality-opts": {
         "short-id": "7250",
       },
@@ -241,7 +239,7 @@ describe("generateClashConfig", () => {
     expect(config["proxy-groups"]?.find((group) => group.name === "Broken Chain")).toBeUndefined();
   });
 
-  it("applies global fingerprints only to compatible nodes and removes invalid dialer-proxy references", () => {
+  it("preserves explicit fingerprints and removes invalid dialer-proxy references", () => {
     const config = generateClashConfig({
       nodes: [
         {
@@ -291,9 +289,6 @@ describe("generateClashConfig", () => {
           targetNodes: ["Plain VMess"],
         },
       ],
-      userConfig: {
-        dnsYaml: "global-client-fingerprint: chrome",
-      },
     });
 
     const plain = config.proxies?.find((proxy) => proxy.name === "Plain VMess");
@@ -303,8 +298,8 @@ describe("generateClashConfig", () => {
 
     expect(plain).not.toHaveProperty("client-fingerprint");
     expect(plain).not.toHaveProperty("dialer-proxy");
-    expect(trojan).toMatchObject({ "client-fingerprint": "chrome" });
-    expect(anytls).toMatchObject({ "client-fingerprint": "chrome" });
+    expect(trojan).not.toHaveProperty("client-fingerprint");
+    expect(anytls).not.toHaveProperty("client-fingerprint");
     expect(preset).toMatchObject({ "client-fingerprint": "safari" });
     expect(config["proxy-groups"]?.find((group) => group.name === "Disabled")).toBeUndefined();
   });

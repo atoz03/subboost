@@ -33,7 +33,6 @@ describe("default config builders", () => {
     const patch = buildDefaultBaseConfigPatch({
       mixedPort: 12345,
       allowLan: false,
-      includeGlobalClientFingerprint: true,
     });
 
     expect(patch).toMatchObject({
@@ -41,7 +40,6 @@ describe("default config builders", () => {
       "allow-lan": false,
       mode: "rule",
       "log-level": "info",
-      "global-client-fingerprint": "chrome",
       profile: {
         "store-selected": true,
         "store-fake-ip": false,
@@ -59,7 +57,6 @@ describe("default config builders", () => {
       "mixed-port": DEFAULT_SUBBOOST_CONFIG.mixedPort,
       "allow-lan": DEFAULT_SUBBOOST_CONFIG.allowLan,
     });
-    expect(defaultPatch).not.toHaveProperty("global-client-fingerprint");
   });
 
   it("builds the full SubBoost template config with empty user customization fields", () => {
@@ -89,7 +86,6 @@ describe("default config builders", () => {
   it("keeps the default YAML example aligned with important base defaults", () => {
     expect(DEFAULT_BASE_CONFIG_YAML).toContain(`mixed-port: ${DEFAULT_SUBBOOST_CONFIG.mixedPort}`);
     expect(DEFAULT_BASE_CONFIG_YAML).toContain(`allow-lan: ${DEFAULT_SUBBOOST_CONFIG.allowLan}`);
-    expect(DEFAULT_BASE_CONFIG_YAML).toContain("global-client-fingerprint: chrome");
     expect(DEFAULT_BASE_CONFIG_YAML).toContain("sniffer:");
     expect(DEFAULT_BASE_CONFIG_YAML).toContain("QUIC: {ports: [443, 8443]}");
   });

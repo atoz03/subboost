@@ -50,9 +50,7 @@ export interface GenerateOptions {
   proxyGroupOrder?: string[];
 }
 
-type BaseConfig = Record<string, unknown> & {
-  "global-client-fingerprint"?: unknown;
-};
+type BaseConfig = Record<string, unknown>;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -111,7 +109,11 @@ function assertNoGeneratedSectionsInBaseConfig(baseConfig: Record<string, unknow
 }
 
 function omitGeneratedSections(baseConfig: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(baseConfig).filter(([key, value]) => value !== undefined && !GENERATED_CONFIG_SECTION_KEYS.has(key)));
+  return Object.fromEntries(
+    Object.entries(baseConfig).filter(
+      ([key, value]) => value !== undefined && !GENERATED_CONFIG_SECTION_KEYS.has(key)
+    )
+  );
 }
 
 function normalizeBaseConfigPatch(baseConfig: Record<string, unknown>): Record<string, unknown> {
@@ -209,12 +211,6 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
   const baseConfigRecord = baseConfig as unknown as Record<string, unknown>;
   const shouldUseDefaultBaseSections = !hasExplicitBaseConfigYaml;
 
-  // mihomo 已将 global-client-fingerprint 标记为 deprecated；这里规范化到每个 proxy 的 client-fingerprint。
-  const globalClientFingerprint =
-    typeof baseConfigRecord["global-client-fingerprint"] === "string" && baseConfigRecord["global-client-fingerprint"].trim()
-      ? String(baseConfigRecord["global-client-fingerprint"]).trim()
-      : undefined;
-
   // 输出前做一次轻量标准化：避免 YAML 数字样式字段被下游（Clash）当成 number 解析
   // 特别是 Reality short-id（有些机场会给纯数字，如 7053 / 7250）
   const normalizedNodes = nodes.map((node) => {
@@ -222,28 +218,8 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     const typed = node as unknown as Record<string, unknown>;
     const type = typeof typed.type === "string" ? typed.type : "";
 
-    const hasClientFingerprint =
-      typeof typed["client-fingerprint"] === "string" && Boolean(String(typed["client-fingerprint"]).trim());
-    const supportsClientFingerprint = type === "vmess" || type === "vless" || type === "trojan" || type === "anytls";
-
-    const nextBase = (() => {
-      if (!supportsClientFingerprint) return typed;
-      if (hasClientFingerprint) return typed;
-      if (!globalClientFingerprint) return typed;
-
-      // 根据官方文档：client-fingerprint 仅对 VMess/VLESS/Trojan/AnyTLS 生效；其中 Trojan/AnyTLS 为 TLS 协议。
-      const shouldApply =
-        type === "trojan" ||
-        type === "anytls" ||
-        (typeof typed.tls === "boolean" && typed.tls) ||
-        (type === "vless" && Boolean(typed["reality-opts"]));
-
-      if (!shouldApply) return typed;
-      return { ...typed, "client-fingerprint": globalClientFingerprint };
-    })();
-
-    if (type !== "vless") return nextBase as unknown as ParsedNode;
-    return normalizeMihomoVlessForGeneration(nextBase) as unknown as ParsedNode;
+    if (type !== "vless") return node;
+    return normalizeMihomoVlessForGeneration(typed) as unknown as ParsedNode;
   });
 
   // Mihomo 不支持的协议不能进入最终 YAML，否则一个无效节点会拖垮整份订阅。
