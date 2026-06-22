@@ -277,6 +277,64 @@ describe("source node refresh helpers", () => {
     });
   });
 
+  it("does not let one legacy deleted origin hide an entire duplicate-origin batch", () => {
+    const parsed = prepareSourceParsedNodes(
+      [
+        ssNode("SOCKS-same.example.com:1080", { server: "same.example.com", port: 1080, password: "one" }),
+        ssNode("SOCKS-same.example.com:1080", { server: "same.example.com", port: 1080, password: "two" }),
+      ],
+      {}
+    );
+
+    const result = mergeParsedSourceNodes([], parsed, ["SOCKS-same.example.com:1080"], {
+      sourceId: "source-a",
+    });
+
+    expect(result.nodes.map((node) => node.name)).toEqual([
+      "SOCKS-same.example.com:1080",
+      "SOCKS-same.example.com:1080 (2)",
+    ]);
+    expect(result.nodes).toEqual([
+      expect.objectContaining({ [SOURCE_IDS_KEY]: ["source-a"], password: "one" }),
+      expect.objectContaining({ [SOURCE_IDS_KEY]: ["source-a"], password: "two" }),
+    ]);
+  });
+
+  it("still skips exact deleted nodes inside a duplicate-origin batch", () => {
+    const deletedNode = ssNode("SOCKS-same.example.com:1080", {
+      server: "same.example.com",
+      port: 1080,
+      password: "one",
+      [ORIGIN_NAME_KEY]: "SOCKS-same.example.com:1080",
+    });
+    const parsed = prepareSourceParsedNodes(
+      [
+        ssNode("SOCKS-same.example.com:1080", { server: "same.example.com", port: 1080, password: "one" }),
+        ssNode("SOCKS-same.example.com:1080", { server: "same.example.com", port: 1080, password: "two" }),
+      ],
+      {}
+    );
+
+    const result = mergeParsedSourceNodes([], parsed, ["SOCKS-same.example.com:1080"], {
+      sourceId: "source-a",
+      deletedNodes: [
+        {
+          originName: "SOCKS-same.example.com:1080",
+          name: "SOCKS-same.example.com:1080",
+          node: deletedNode,
+        },
+      ],
+    });
+
+    expect(result.nodes).toEqual([
+      expect.objectContaining({
+        name: "SOCKS-same.example.com:1080",
+        [SOURCE_IDS_KEY]: ["source-a"],
+        password: "two",
+      }),
+    ]);
+  });
+
   it("smart-matches existing manual nodes by content and preserves source id order", () => {
     const state = [
       ssNode("Manual Existing", {
