@@ -19,6 +19,7 @@
     "./parser/*": "./src/parser/*.ts",
     "./proxy-group-name": "./src/proxy-group-name.ts",
     "./proxy-group-advanced-mode": "./src/proxy-group-advanced-mode.ts",
+    "./proxy-group-targets": "./src/proxy-group-targets.ts",
     "./rules/*": "./src/rules/*.ts",
     "./rules-database": "./src/rules-database.ts",
     "./subscription/*": "./src/subscription/*.ts",
