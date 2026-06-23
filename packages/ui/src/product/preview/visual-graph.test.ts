@@ -72,7 +72,14 @@ vi.mock("@subboost/ui/store/config-store", () => ({
 }));
 vi.mock("@subboost/core/generator/proxy-groups", () => ({
 	  PROXY_GROUP_MODULES: [
-	    { id: "select", name: "🚀 节点选择", emoji: "🚀", groupType: "select", category: "core" },
+	    {
+	      id: "select",
+	      name: "🚀 节点选择",
+	      emoji: "🚀",
+	      groupType: "select",
+	      category: "core",
+	      rules: [{ id: "sel", name: "Select Rule", behavior: "classical" }],
+	    },
 	    {
 	      id: "auto",
 	      name: "⚡ 自动选择",
@@ -212,6 +219,52 @@ describe("VisualGraph", () => {
     expect(mocks.store.setProxyGroupOrder).toHaveBeenCalledWith(["module:auto"]);
   });
 
+  it("uses selector defaults when optional store slices are absent", () => {
+    mocks.generatedProxyGroups = [{ name: "🚀 节点选择", type: "select", proxies: ["DIRECT"] }];
+    mocks.customRuleSets = [];
+    mocks.store = {
+      nodes: [{ name: "Only", type: "ss" }],
+      enabledProxyGroups: ["select"],
+      testUrl: "https://example.com",
+      testInterval: 300,
+      ruleProviderBaseUrl: "https://rules.example",
+      setProxyGroupOrder: vi.fn(),
+    };
+
+    const { html } = renderGraph();
+
+    expect(html).toContain("1");
+    expect(mocks.captures.proxyGroupsPreview.displayGroups).toEqual([
+      expect.objectContaining({ id: "module:select", name: "🚀 节点选择" }),
+    ]);
+    expect(mocks.captures.customRulesPreview).toEqual({
+      customRules: [],
+      ruleSets: [],
+    });
+  });
+
+  it("shows builtin rules moved from another module into the target module", () => {
+    mocks.generatedProxyGroups = [{ name: "🚀 节点选择", type: "select", proxies: ["DIRECT"] }];
+    mocks.store = {
+      ...mocks.store,
+      builtinRuleEdits: {
+        "module:auto:r1": { target: "🚀 节点选择" },
+        "module:auto:missing": { target: "🚀 节点选择" },
+        "module:missing:r1": { target: "🚀 节点选择" },
+        "module:select:sel": { target: "🚀 节点选择" },
+        "not-module": { target: "🚀 节点选择" },
+      },
+      proxyGroupOrder: [],
+    };
+
+    renderGraph();
+
+    expect(mocks.captures.proxyGroupsPreview.displayGroups[0].rules).toEqual([
+      { id: "sel", name: "Select Rule", behavior: "classical" },
+      { id: "r1", name: "Rule One", behavior: "domain" },
+    ]);
+  });
+
   it("falls back to generated order and truncates long node lists", () => {
     mocks.store.proxyGroupOrder = [];
     mocks.store.dialerProxyGroups = [{ id: "d2", name: "Disabled", enabled: false }];
@@ -316,5 +369,20 @@ describe("VisualGraph", () => {
     expect(mocks.captures.protocolBadges.map((props: any) => props.type)).toEqual(["anytls", "unknown"]);
     expect(html).toContain("bg-teal-400");
     expect(html).toContain("bg-gray-400");
+  });
+
+  it("merges built-in rule edits moved from another module and skips invalid edit records", () => {
+    mocks.store.builtinRuleEdits = {
+      "module:auto:r1": { enabled: false },
+      "module:select:sel": { target: "⚡ 自动选择" },
+      "module:select:missing": { target: "⚡ 自动选择" },
+      "module:missing:ghost": { target: "⚡ 自动选择" },
+      "not-a-module-key": { target: "⚡ 自动选择" },
+    };
+
+    renderGraph({ 3: 800 });
+    const auto = mocks.captures.proxyGroupsPreview.displayGroups.find((group: any) => group.id === "module:auto");
+
+    expect(auto.rules).toEqual([{ id: "sel", name: "Select Rule", behavior: "classical" }]);
   });
 });

@@ -198,6 +198,8 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
     mocks.captures.typeMenus[0].onChange({ groupType: "load-balance", strategy: "round-robin" });
     expect(setters[3]).toHaveBeenCalledWith("load-balance");
     expect(setters[4]).toHaveBeenCalledWith("round-robin");
+    mocks.captures.typeMenus[0].onChange({ groupType: "select" });
+    expect(setters[3]).toHaveBeenCalledWith("select");
 
     mocks.captures.buttons.find((props: any) => props.title === "新增").onClick();
     expect(mocks.store.addCustomProxyGroup).toHaveBeenCalledWith({
@@ -213,6 +215,22 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
     renderPanel({ 1: { emoji: "🧩", name: "Custom" } });
     mocks.captures.buttons.find((props: any) => props.title === "新增").onClick();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "代理组名称已存在，请换一个名称。", variant: "warning" }));
+  });
+
+  it("ignores blank new group names and keeps load-balance strategy on add", () => {
+    renderPanel({ 1: { emoji: "🧩", name: "   " }, 3: "select" });
+    mocks.captures.buttons.find((props: any) => props.title === "新增").onClick();
+    expect(mocks.store.addCustomProxyGroup).not.toHaveBeenCalled();
+
+    renderPanel({ 1: { emoji: "🧩", name: "Balanced" }, 2: "  LB group  ", 3: "load-balance", 4: "round-robin" });
+    mocks.captures.buttons.find((props: any) => props.title === "新增").onClick();
+    expect(mocks.store.addCustomProxyGroup).toHaveBeenCalledWith({
+      name: "🧩 Balanced",
+      emoji: "🧩",
+      description: "LB group",
+      groupType: "load-balance",
+      strategy: "round-robin",
+    });
   });
 
   it("renames, removes, and changes existing group type", () => {
@@ -322,6 +340,16 @@ describe("ProxyGroupsCustomGroupsPanel", () => {
       groupType: "select",
       strategy: undefined,
     });
+  });
+
+  it("ignores blank custom group rename commits", () => {
+    renderPanel({ 0: new Set(["custom-1"]), 5: "custom-1", 6: "   ", 7: "desc" });
+
+    const renameInput = mocks.captures.inputs.find((props: any) => props.autoFocus);
+    renameInput.onKeyDown({ key: "Enter" });
+
+    expect(mocks.store.updateCustomProxyGroup).not.toHaveBeenCalled();
+    expect(mocks.toast).not.toHaveBeenCalled();
   });
 
   it("handles custom rule-set move no-op and missing-target paths", () => {

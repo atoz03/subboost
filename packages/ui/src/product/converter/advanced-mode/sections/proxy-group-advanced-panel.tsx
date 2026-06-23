@@ -27,24 +27,24 @@ type AdvancedTarget = {
   name: string;
 };
 
-type ResolvedMember = {
+export type ResolvedMember = {
   key: string;
   ref: ProxyGroupMemberRef;
   name: string;
   kind: ProxyGroupMemberRef["kind"];
 };
 
-function normalizeList<T>(value: readonly T[] | undefined): T[] {
+export function normalizeList<T>(value: readonly T[] | undefined): T[] {
   return Array.isArray(value) ? [...value] : [];
 }
 
-function memberLabel(member: ResolvedMember): string {
+export function memberLabel(member: ResolvedMember): string {
   if (member.kind === "direct") return "DIRECT";
   if (member.kind === "reject") return "REJECT";
   return member.name;
 }
 
-function memberKindLabel(member: ResolvedMember): string {
+export function memberKindLabel(member: ResolvedMember): string {
   switch (member.kind) {
     case "node":
       return "节点";
@@ -59,7 +59,7 @@ function memberKindLabel(member: ResolvedMember): string {
   }
 }
 
-function buildMemberFromName(
+export function buildMemberFromName(
   name: string,
   options: {
     nodes: ParsedNode[];
@@ -90,18 +90,18 @@ function buildMemberFromName(
   };
 }
 
-function toggleValue<T extends string>(list: readonly T[] | undefined, value: T): T[] {
+export function toggleValue<T extends string>(list: readonly T[] | undefined, value: T): T[] {
   const next = new Set(normalizeList(list));
   if (next.has(value)) next.delete(value);
   else next.add(value);
   return Array.from(next);
 }
 
-function withoutMember(list: readonly ProxyGroupMemberRef[] | undefined, key: string): ProxyGroupMemberRef[] {
+export function withoutMember(list: readonly ProxyGroupMemberRef[] | undefined, key: string): ProxyGroupMemberRef[] {
   return normalizeList(list).filter((member) => getProxyGroupMemberKey(member) !== key);
 }
 
-function withMember(list: readonly ProxyGroupMemberRef[] | undefined, member: ProxyGroupMemberRef): ProxyGroupMemberRef[] {
+export function withMember(list: readonly ProxyGroupMemberRef[] | undefined, member: ProxyGroupMemberRef): ProxyGroupMemberRef[] {
   const key = getProxyGroupMemberKey(member);
   return [...withoutMember(list, key), member];
 }
@@ -113,7 +113,7 @@ const PROTECTED_INSERT_KEYS = new Set([
   "module:select",
 ]);
 
-function insertMemberAfterProtected(
+export function insertMemberAfterProtected(
   currentMembers: ResolvedMember[],
   member: ProxyGroupMemberRef,
 ): ProxyGroupMemberRef[] {

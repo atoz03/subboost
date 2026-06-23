@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const captures = vi.hoisted(() => ({
+  initialSections: undefined as Set<string> | undefined,
   stateSetter: vi.fn(),
   lastSections: undefined as Set<string> | undefined,
   sections: {} as Record<string, any>,
@@ -13,7 +14,7 @@ vi.mock("react", async (importOriginal) => {
   return {
     ...actual,
     useState: (initial: unknown) => {
-      const value = typeof initial === "function" ? (initial as () => unknown)() : initial;
+      const value = captures.initialSections ?? (typeof initial === "function" ? (initial as () => unknown)() : initial);
       captures.stateSetter = vi.fn((updater: unknown) => {
         captures.lastSections =
           typeof updater === "function"
@@ -50,6 +51,7 @@ import { AdvancedMode } from "./root";
 describe("AdvancedMode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    captures.initialSections = undefined;
     captures.sections = {};
     captures.lastSections = undefined;
   });
@@ -78,6 +80,17 @@ describe("AdvancedMode", () => {
     captures.sections.input.onToggle();
     expect(captures.stateSetter).toHaveBeenCalled();
     expect(captures.lastSections?.has("input")).toBe(false);
+    expect(captures.lastSections?.has("dns")).toBe(true);
+  });
+
+  it("expands a collapsed section through the same toggle callback", () => {
+    captures.initialSections = new Set(["dns"]);
+    renderToStaticMarkup(React.createElement(AdvancedMode));
+
+    expect(captures.sections.input.isExpanded).toBe(false);
+    captures.sections.input.onToggle();
+
+    expect(captures.lastSections?.has("input")).toBe(true);
     expect(captures.lastSections?.has("dns")).toBe(true);
   });
 });
