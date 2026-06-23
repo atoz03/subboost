@@ -305,4 +305,150 @@ describe("proxy group generator", () => {
     expect(providers["disabled-rule"]).toBeUndefined();
     expect(rules).toEqual(["MATCH,DIRECT"]);
   });
+
+  it("covers provider target guards and module group type overrides", () => {
+    const disabledByName = { ...customGroup("disabled-name", "select"), enabled: false };
+    const groups = generateProxyGroups({
+      nodes: [node("Node A"), node("Node B")],
+      proxyProviderNames: ["remote"],
+      enabledModules: ["select", "auto", "ai", "private", "cn", "global", "final"],
+      ruleProviderBaseUrl: "https://rules.example.com",
+      testUrl: "https://probe.example.com/204",
+      testInterval: 120,
+      customProxyGroups: [
+        disabledByName,
+        {
+          id: "blank-name",
+          name: "" as never,
+          emoji: "",
+          includeInGroupMembers: true,
+          groupType: "select",
+        },
+      ],
+      proxyGroupAdvanced: {
+        auto: { groupType: "load-balance", strategy: "round-robin" },
+        ai: { groupType: "url-test", regions: ["other"] },
+        private: { groupType: "direct-first", extraMembers: [{ kind: "node", name: "Node B" }] },
+        cn: { groupType: "reject-first" },
+      },
+    });
+    const providers = generateRuleProviders({
+      nodes: [node("Node A")],
+      enabledModules: ["cn"],
+      ruleProviderBaseUrl: "https://rules.example.com",
+      testUrl: "https://probe.example.com/204",
+      testInterval: 120,
+      customProxyGroups: [disabledByName],
+      customRuleSets: [
+        {
+          id: "skip-by-name",
+          name: "Skip",
+          behavior: "domain",
+          path: "geosite/skip.mrs",
+          target: "Custom disabled-name",
+        },
+        {
+          id: "relative-path",
+          name: "Relative",
+          behavior: "domain",
+          path: "geosite/relative.mrs",
+          target: "DIRECT",
+        },
+        {
+          id: "relative-path",
+          name: "Duplicate",
+          behavior: "domain",
+          path: "geosite/duplicate.mrs",
+          target: "DIRECT",
+        },
+        {
+          id: "",
+          name: "Missing id",
+          behavior: "domain",
+          path: "geosite/missing.mrs",
+          target: "DIRECT",
+        },
+      ],
+    });
+
+    expect(groups.find((group) => group.name === "⚡ 自动选择")).toMatchObject({
+      type: "load-balance",
+      strategy: "round-robin",
+    });
+    expect(groups.find((group) => group.name.includes("AI"))).toMatchObject({
+      type: "url-test",
+      proxies: [],
+      use: ["remote"],
+    });
+    expect(groups.find((group) => group.name === "🏠 私有网络")?.proxies?.slice(0, 2)).toEqual(["DIRECT", "REJECT"]);
+    expect(groups.find((group) => group.name === "🔒 国内服务")?.proxies?.slice(0, 2)).toEqual(["REJECT", "DIRECT"]);
+    expect(providers["skip-by-name"]).toBeUndefined();
+    expect(providers["relative-path"]).toMatchObject({
+      url: "https://rules.example.com/geosite/relative.mrs",
+    });
+  });
+
+  it("builds groups without providers while keeping info nodes out of testable groups", () => {
+    const groups = generateProxyGroups({
+      nodes: [node("余额 | 10GB"), node("Korea Node"), node("US Node")],
+      enabledModules: ["auto", "ai", "private", "global", "final"],
+      ruleProviderBaseUrl: "https://rules.example.com",
+      testUrl: "https://probe.example.com/204",
+      testInterval: 60,
+      customProxyGroups: [
+        {
+          id: "direct-local",
+          name: "Direct Local",
+          emoji: "",
+          includeInGroupMembers: true,
+          groupType: "direct-first",
+          advanced: { memberOrder: [{ kind: "direct" }, { kind: "node", name: "US Node" }] },
+        },
+        {
+          id: "reject-local",
+          name: "Reject Local",
+          emoji: "",
+          includeInGroupMembers: true,
+          groupType: "reject-first",
+        },
+        {
+          id: "filtered-reject",
+          name: "Filtered Reject",
+          emoji: "",
+          memberSource: "filtered-nodes",
+          groupType: "reject-first",
+          advanced: { includeRegex: "Korea|余额" },
+        },
+      ],
+      proxyGroupAdvanced: {
+        ai: {
+          groupType: "select",
+          extraMembers: [{ kind: "custom", id: "direct-local" }],
+          excludedMembers: [{ kind: "node", name: "US Node" }],
+        },
+      },
+    });
+
+    const auto = groups.find((group) => group.name === "⚡ 自动选择");
+    const ai = groups.find((group) => group.name.includes("AI"));
+    const directLocal = groups.find((group) => group.name === "Direct Local");
+    const rejectLocal = groups.find((group) => group.name === "Reject Local");
+    const filteredReject = groups.find((group) => group.name === "Filtered Reject");
+
+    expect(auto).toMatchObject({
+      type: "url-test",
+      proxies: ["Korea Node", "US Node"],
+      url: "https://probe.example.com/204",
+      interval: 60,
+    });
+    expect(auto).not.toHaveProperty("use");
+    expect(auto?.proxies).not.toContain("余额 | 10GB");
+    expect(ai?.proxies).toContain("Direct Local");
+    expect(ai?.proxies).not.toContain("US Node");
+    expect(directLocal?.proxies?.slice(0, 2)).toEqual(["DIRECT", "US Node"]);
+    expect(directLocal?.proxies).not.toContain("Direct Local");
+    expect(rejectLocal?.proxies?.slice(0, 2)).toEqual(["REJECT", "DIRECT"]);
+    expect(filteredReject?.proxies).toEqual(["REJECT", "DIRECT", "Korea Node"]);
+    expect(groups.find((group) => group.name === "🐟 漏网之鱼")?.proxies).toContain("Direct Local");
+  });
 });

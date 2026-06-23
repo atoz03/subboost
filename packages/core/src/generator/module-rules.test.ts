@@ -9,7 +9,7 @@ import {
   isPresetModuleRule,
   normalizeHiddenPresetRuleIds,
 } from "./module-rules";
-import type { ProxyGroupModule, ProxyGroupRule } from "./proxy-group-modules";
+import type { ProxyGroupModule, ProxyGroupRule } from "@subboost/core/generator/proxy-group-modules";
 
 const proxyModule: ProxyGroupModule = {
   id: "media",

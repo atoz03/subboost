@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateSubBoostTemplateConfig } from "@subboost/core/templates/config-template";
+import { validateSubBoostTemplateConfig } from "./config-template";
 import { expectInvalid, validConfig } from "./config-template.test-helpers";
 
 describe("validateSubBoostTemplateConfig custom groups", () => {
@@ -112,6 +112,19 @@ describe("validateSubBoostTemplateConfig custom groups", () => {
           {
             id: "custom",
             name: "Custom",
+            emoji: 1 as never,
+            groupType: "select",
+          },
+        ],
+      },
+      "customProxyGroups.emoji 必须是字符串"
+    );
+    expectInvalid(
+      {
+        customProxyGroups: [
+          {
+            id: "custom",
+            name: "Custom",
             emoji: "C",
             groupType: "bad" as never,
           },
@@ -174,6 +187,70 @@ describe("validateSubBoostTemplateConfig custom groups", () => {
       },
       "customProxyGroups.includeInGroupMembers 必须是布尔值"
     );
+
+    expectInvalid(
+      {
+        customProxyGroups: [
+          {
+            id: "legacy",
+            name: "Legacy",
+            emoji: "L",
+            groupType: "select",
+            rules: [],
+          } as never,
+        ],
+      },
+      "模板配置包含已移除字段: customProxyGroups[0].rules"
+    );
+
+    const validCustomGroup = validateSubBoostTemplateConfig(
+      validConfig({
+        customProxyGroups: [
+          {
+            id: "balance",
+            name: "Balance",
+            emoji: "B",
+            description: "  Media group  ",
+            memberSource: "filtered-nodes",
+            includeInGroupMembers: false,
+            groupType: "load-balance",
+            advanced: {
+              sourceIds: ["source-a"],
+            },
+          },
+        ],
+      })
+    );
+    expect(validCustomGroup.ok && validCustomGroup.config.customProxyGroups[0]).toMatchObject({
+      advanced: { sourceIds: ["source-a"] },
+      description: "Media group",
+      strategy: "consistent-hashing",
+    });
+
+    const validSelectGroup = validateSubBoostTemplateConfig(
+      validConfig({
+        customProxyGroups: [
+          {
+            id: "manual",
+            name: "Manual",
+            emoji: "",
+            includeInGroupMembers: true,
+            groupType: "select",
+          },
+        ],
+      })
+    );
+    expect(validSelectGroup.ok).toBe(true);
+    if (validSelectGroup.ok) {
+      expect(validSelectGroup.config.customProxyGroups[0]).toEqual({
+        id: "manual",
+        name: "Manual",
+        emoji: "",
+        includeInGroupMembers: true,
+        groupType: "select",
+        advanced: {},
+      });
+    }
 
     const removedField = `filtered${"ProxyGroups"}`;
     expectInvalid({ [removedField]: [] } as never, `模板配置包含已移除字段: ${removedField}`);

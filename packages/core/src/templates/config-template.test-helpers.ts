@@ -1,9 +1,9 @@
 import { expect } from "vitest";
-import { getModulesForTemplate } from "@subboost/core/generator/proxy-groups";
+import { getModulesForTemplate } from "../generator/proxy-groups";
 import {
   SUBBOOST_TEMPLATE_CONFIG_SCHEMA,
   validateSubBoostTemplateConfig,
-} from "@subboost/core/templates/config-template";
+} from "./config-template";
 import type { SubBoostTemplateConfig } from "@subboost/core/types/template-config";
 
 export function validConfig(patch: Partial<SubBoostTemplateConfig> & Record<string, unknown> = {}): SubBoostTemplateConfig {

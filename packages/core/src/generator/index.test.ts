@@ -457,6 +457,154 @@ describe("generateClashConfig", () => {
     expect(config["proxy-groups"]?.some((group) => Object.is((group as { name: unknown }).name, 123))).toBe(false);
   });
 
+  it("keeps safe fallbacks for empty providers, blank fingerprints, and unusable dialers", () => {
+    const config = generateClashConfig({
+      nodes: [
+        ssNode({ name: "Relay" }),
+        {
+          name: "Plain VMess",
+          type: "vmess",
+          server: "vmess.example.com",
+          port: 80,
+          uuid: "11111111-1111-4111-8111-111111111111",
+          alterId: 0,
+          cipher: "auto",
+          "client-fingerprint": 1,
+        } as ParsedNode,
+        {
+          name: "VLESS TCP",
+          type: "vless",
+          server: "vless.example.com",
+          port: 443,
+          uuid: "11111111-1111-4111-8111-111111111111",
+          network: "tcp",
+        } as ParsedNode,
+      ],
+      proxyProviders: {},
+      dialerProxyGroups: [
+        {
+          id: "empty",
+          name: "Empty Chain",
+          type: "select",
+          relayNodes: [" Missing ", "Missing"],
+          targetNodes: ["Plain VMess", " "],
+        },
+      ],
+      userConfig: {
+        dnsYaml: [
+          "global-client-fingerprint: ' '",
+          "proxy-providers:",
+          "  local:",
+          "    type: file",
+          "    path: ./local.yaml",
+        ].join("\n"),
+        listenerPorts: {
+          Relay: 0,
+          "Plain VMess": 65536,
+          "VLESS TCP": 12003,
+        },
+      },
+    });
+
+    expect(config["proxy-providers"]).toEqual({
+      local: {
+        type: "file",
+        path: "./local.yaml",
+      },
+    });
+    expect(config.proxies?.find((proxy) => proxy.name === "Plain VMess")).toHaveProperty("client-fingerprint", 1);
+    expect(config.proxies?.find((proxy) => proxy.name === "VLESS TCP")).not.toHaveProperty("client-fingerprint");
+    expect(config.listeners).toEqual([{ name: "mixed0", type: "mixed", port: 12003, proxy: "VLESS TCP" }]);
+    expect(config["proxy-groups"]?.find((group) => group.name === "Empty Chain")).toBeUndefined();
+  });
+
+  it("normalizes mixed malformed nodes and dialer entries while preserving valid outputs", () => {
+    const config = generateClashConfig({
+      nodes: [
+        null as never,
+        { name: "Bad Type", type: 1, server: "bad.example.com", port: 443 } as never,
+        ssNode({ name: "Relay", server: "relay.example.com" }),
+        ssNode({ name: "Target", server: "target.example.com" }),
+        ssNode({ name: "Blank Target", server: "blank-target.example.com" }),
+        {
+          name: "TLS VMess",
+          type: "vmess",
+          server: "vmess.example.com",
+          port: 443,
+          uuid: "11111111-1111-4111-8111-111111111111",
+          alterId: 0,
+          cipher: "auto",
+          tls: true,
+        } as ParsedNode,
+        {
+          name: "Reality VLESS",
+          type: "vless",
+          server: "vless.example.com",
+          port: 443,
+          uuid: "11111111-1111-4111-8111-111111111111",
+          "reality-opts": {
+            "public-key": REALITY_PUBLIC_KEY,
+          },
+        } as ParsedNode,
+      ],
+      dialerProxyGroups: [
+        {
+          id: "messy",
+          name: "Messy Chain",
+          type: "select",
+          relayNodes: [1 as never, " Relay ", "DIRECT", "Relay"],
+          targetNodes: [2 as never, " Target ", "Missing"],
+        },
+        {
+          id: "blank-name",
+          name: " ",
+          type: "select",
+          relayNodes: ["Relay"],
+          targetNodes: ["Blank Target"],
+        },
+      ],
+      proxyGroupOrder: [1 as never, "dialer:messy", "module:auto"],
+      userConfig: {
+        dnsYaml: [
+          "global-client-fingerprint: chrome",
+          "nameserver-policy:",
+          "  '+.top.example.com': 1.1.1.1",
+          "dns:",
+          "  enable: true",
+        ].join("\n"),
+        enabledGroups: ["select", "auto", "global", "final"],
+      },
+    });
+
+    expect(config.proxies?.map((proxy) => proxy.name)).toEqual([
+      "Relay",
+      "Target",
+      "Blank Target",
+      "TLS VMess",
+      "Reality VLESS",
+    ]);
+    expect(config.dns).toEqual({
+      enable: true,
+      "nameserver-policy": {
+        "+.top.example.com": "1.1.1.1",
+      },
+    });
+    expect(config.proxies?.find((proxy) => proxy.name === "Target")).toMatchObject({
+      "dialer-proxy": "Messy Chain",
+    });
+    expect(config.proxies?.find((proxy) => proxy.name === "Blank Target")).toHaveProperty("dialer-proxy", " ");
+    expect(config.proxies?.find((proxy) => proxy.name === "TLS VMess")).toMatchObject({
+      "client-fingerprint": "chrome",
+    });
+    expect(config.proxies?.find((proxy) => proxy.name === "Reality VLESS")).toMatchObject({
+      "client-fingerprint": "chrome",
+    });
+    expect(config["proxy-groups"]?.slice(0, 2).map((group) => group.name)).toEqual([
+      "Messy Chain",
+      "⚡ 自动选择",
+    ]);
+  });
+
   it("generates YAML through the public helper", () => {
     const yaml = generateClashYaml({
       nodes: [ssNode()],

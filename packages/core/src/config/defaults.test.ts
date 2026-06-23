@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SUBBOOST_TEMPLATE_CONFIG_SCHEMA } from "@subboost/core/templates/config-template";
+import { SUBBOOST_TEMPLATE_CONFIG_SCHEMA } from "../templates/config-template";
 import {
   DEFAULT_BASE_CONFIG_YAML,
   DEFAULT_SUBBOOST_CONFIG,

@@ -33,7 +33,7 @@ import type {
 } from "@subboost/core/types/config";
 import type { DialerProxyGroup } from "@subboost/core/types/template-config";
 import { collectDnsPolicyEntries, configToYaml } from "./yaml";
-import { isMihomoSupportedProxyNode, normalizeMihomoVlessForGeneration } from "@subboost/core/mihomo/proxy-sanitizer";
+import { isMihomoSupportedProxyNode, normalizeMihomoVlessForGeneration } from "../mihomo/proxy-sanitizer";
 import { chooseFallbackPolicyTarget, withBuiltinPolicyTargets } from "./policy-targets";
 
 export interface GenerateOptions {

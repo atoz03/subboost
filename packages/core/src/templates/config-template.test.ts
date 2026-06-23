@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getModulesForTemplate } from "@subboost/core/generator/proxy-groups";
+import { getModulesForTemplate } from "../generator/proxy-groups";
 import {
   SUBBOOST_TEMPLATE_CONFIG_SCHEMA,
   validateSubBoostTemplateConfig,
-} from "@subboost/core/templates/config-template";
+} from "./config-template";
 import { DEFAULT_LOAD_BALANCE_STRATEGY } from "@subboost/core/types/config";
 import { expectInvalid, validConfig } from "./config-template.test-helpers";
 
@@ -158,6 +158,36 @@ describe("validateSubBoostTemplateConfig", () => {
     expect(result.config).not.toHaveProperty("moduleRuleOverrides");
     expect(result.config).not.toHaveProperty("moduleRuleExclusions");
     expect(result.config).not.toHaveProperty("allRulesOrderEditingEnabled");
+  });
+
+  it("uses defaults when optional compatibility fields are omitted", () => {
+    const [moduleId] = getModulesForTemplate("minimal");
+    const result = validateSubBoostTemplateConfig(
+      validConfig({
+        hiddenProxyGroups: undefined as never,
+        proxyGroupAdvanced: {
+          [moduleId]: {
+            sourceIds: ["source-a"],
+          },
+        },
+        customRuleSets: undefined as never,
+        builtinRuleEdits: undefined as never,
+        ruleOrder: undefined as never,
+        proxyGroupNameOverrides: undefined as never,
+        cnIpNoResolve: undefined as never,
+        experimentalCnUseCnRuleSet: undefined as never,
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.hiddenProxyGroups).toEqual([]);
+    expect(result.config.proxyGroupAdvanced[moduleId]).toEqual({ sourceIds: ["source-a"] });
+    expect(result.config.customRuleSets).toEqual([]);
+    expect(result.config.builtinRuleEdits).toEqual({});
+    expect(result.config.proxyGroupNameOverrides).toEqual({});
+    expect(result.config).not.toHaveProperty("cnIpNoResolve");
+    expect(result.config).not.toHaveProperty("experimentalCnUseCnRuleSet");
   });
 
   it("rejects removed rule-model compatibility fields", () => {

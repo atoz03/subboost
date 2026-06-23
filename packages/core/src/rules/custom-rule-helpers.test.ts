@@ -25,6 +25,7 @@ describe("custom routing rule set helpers", () => {
     expect(parseRuleSetTargetValue(" module: select ")).toEqual({ kind: "module", id: "select" });
     expect(parseRuleSetTargetValue("custom:custom-a")).toEqual({ kind: "custom", id: "custom-a" });
     expect(parseRuleSetTargetValue("module: ")).toBeNull();
+    expect(parseRuleSetTargetValue("custom: ")).toBeNull();
     expect(parseRuleSetTargetValue("other:select")).toBeNull();
 
     expect(extractRuleSetPathFromUrl("https://cdn.example/rules/geosite/openai.mrs?token=1")).toBe(
@@ -72,6 +73,10 @@ describe("custom routing rule set helpers", () => {
         },
         { id: "", name: "skip", behavior: "domain", path: "geosite/skip.mrs", target: "Custom A" },
         { id: "missing-path", name: "missing path", behavior: "domain", path: "", target: "Custom A" },
+        { id: "missing-module", name: "missing module", behavior: "domain", path: "geosite/missing.mrs", target: { kind: "module", id: "missing" } },
+        { id: "missing-custom", name: "missing custom", behavior: "domain", path: "geosite/missing.mrs", target: { kind: "custom", id: "missing" } },
+        { id: "blank-custom", name: "blank custom", behavior: "domain", path: "geosite/blank.mrs", target: { kind: "custom", id: "" } },
+        { id: "blank-target", name: "blank target", behavior: "domain", path: "geosite/blank-target.mrs", target: " " },
       ],
       proxyGroupNameOverrides: { select: "Custom Select" },
     });
@@ -219,6 +224,71 @@ describe("custom rule batch import", () => {
       expect.objectContaining({ type: "DOMAIN", value: "batch.com", target: "PROXY", noResolve: false }),
       expect.objectContaining({ type: "DOMAIN-SUFFIX", value: "quoted,domain", target: "DIRECT", noResolve: false }),
       expect.objectContaining({ type: "DOMAIN", value: "a\"b.com", target: "PROXY", noResolve: false }),
+    ]);
+  });
+
+  it("handles YAML list edge cases and all-ready imports", () => {
+    const skipped = parseCustomRuleBatchImport({
+      text: ["rules:", "-", "- # nested comment", "- // nested comment"].join("\n"),
+      defaultType: "DOMAIN",
+      defaultTarget: "PROXY",
+      defaultNoResolve: false,
+      targetOptions: ["PROXY"],
+      existingRules: [],
+    });
+
+    expect(skipped.items.map((item) => item.message)).toEqual(["rules 块标记", "空 YAML 列表项", "注释", "注释"]);
+    expect(skipped.canImport).toBe(false);
+
+    const ready = parseCustomRuleBatchImport({
+      text: ["- DOMAIN,example.com", "- DOMAIN-SUFFIX,example.org,PROXY"].join("\n"),
+      defaultType: "DOMAIN",
+      defaultTarget: "PROXY",
+      defaultNoResolve: true,
+      targetOptions: ["PROXY"],
+      existingRules: [],
+    });
+
+    expect(ready.items.map((item) => item.status)).toEqual(["ready", "ready"]);
+    expect(ready.rules).toEqual([
+      expect.objectContaining({ type: "DOMAIN", value: "example.com", target: "PROXY", noResolve: true }),
+      expect.objectContaining({ type: "DOMAIN-SUFFIX", value: "example.org", target: "PROXY", noResolve: false }),
+    ]);
+    expect(ready.canImport).toBe(true);
+  });
+
+  it("defaults two-column rules and matches duplicate object targets", () => {
+    const result = parseCustomRuleBatchImport({
+      text: [
+        "DOMAIN,two-column.example",
+        "DOMAIN,object.example,custom:custom-a",
+      ].join("\n"),
+      defaultType: "DOMAIN-SUFFIX",
+      defaultTarget: "PROXY",
+      defaultNoResolve: true,
+      targetOptions: ["PROXY", "custom:custom-a"],
+      existingRules: [
+        {
+          id: "existing-object",
+          type: "DOMAIN",
+          value: "object.example",
+          target: { kind: "custom", id: "custom-a" },
+          noResolve: false,
+        } as CustomRule,
+      ],
+    });
+
+    expect(result.items.map((item) => item.status)).toEqual([
+      "ready",
+      "duplicate",
+    ]);
+    expect(result.rules).toEqual([
+      expect.objectContaining({
+        type: "DOMAIN",
+        value: "two-column.example",
+        target: "PROXY",
+        noResolve: true,
+      }),
     ]);
   });
 });

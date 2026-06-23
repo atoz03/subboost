@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import yaml from "js-yaml";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   diffGeneratedYamlSemantics,
+  GeneratedYamlSemanticError,
   hashGeneratedYamlSemantics,
   parseGeneratedYamlSemantics,
 } from "./yaml-semantics";
@@ -115,5 +117,77 @@ proxy-groups:
       severity: "high",
       issues: [expect.objectContaining({ path: "proxy-groups", severity: "high" })],
     });
+  });
+
+  it("handles empty YAML, scalar parse errors, and low-impact changes", () => {
+    const emptyA = parseGeneratedYamlSemantics("");
+    const emptyB = parseGeneratedYamlSemantics("null\n");
+    const lowBefore = parseGeneratedYamlSemantics(`
+mixed-port: 7897
+profile:
+  store-selected: true
+limits:
+  nan: .nan
+  pos: .inf
+  neg: -.inf
+`);
+    const lowAfter = parseGeneratedYamlSemantics(`
+mixed-port: 7898
+profile:
+  store-selected: true
+limits:
+  nan: .nan
+  pos: .inf
+  neg: -.inf
+`);
+
+    expect(diffGeneratedYamlSemantics(emptyA, emptyA)).toEqual({
+      changed: false,
+      severity: "none",
+      issues: [],
+    });
+    expect(diffGeneratedYamlSemantics(emptyA, emptyB)).toMatchObject({
+      changed: true,
+      severity: "format-only",
+    });
+    expect(diffGeneratedYamlSemantics(lowBefore, lowAfter)).toMatchObject({
+      changed: true,
+      severity: "low",
+      issues: [expect.objectContaining({ path: "mixed-port", severity: "low" })],
+    });
+    expect(hashGeneratedYamlSemantics(lowBefore)).toMatch(/^[a-f0-9]{8}$/);
+    expect(() => parseGeneratedYamlSemantics("just-a-string")).toThrow(GeneratedYamlSemanticError);
+    expect(() => parseGeneratedYamlSemantics("dns:\n  nameserver: [")).toThrow("Generated YAML parse failed");
+  });
+
+  it("normalizes undefined semantic fields and formats unusual parser errors", () => {
+    const snapshot = {
+      version: 1 as const,
+      rawFingerprint: "",
+      semanticFingerprint: "",
+      sections: {
+        keep: { b: 2, a: undefined },
+        skip: undefined,
+      },
+    };
+    expect(hashGeneratedYamlSemantics(snapshot)).toMatch(/^[a-f0-9]{8}$/);
+
+    const load = vi.spyOn(yaml, "load");
+    try {
+      load.mockImplementationOnce(() => []);
+      expect(() => parseGeneratedYamlSemantics("[]")).toThrow("top-level object");
+
+      load.mockImplementationOnce(() => {
+        throw "plain parser failure";
+      });
+      expect(() => parseGeneratedYamlSemantics("bad")).toThrow("plain parser failure");
+
+      load.mockImplementationOnce(() => {
+        throw { message: "object parser failure", mark: {} };
+      });
+      expect(() => parseGeneratedYamlSemantics("bad")).toThrow("object parser failure");
+    } finally {
+      load.mockRestore();
+    }
   });
 });

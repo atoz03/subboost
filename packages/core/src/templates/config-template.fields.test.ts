@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateSubBoostTemplateConfig } from "@subboost/core/templates/config-template";
+import { validateSubBoostTemplateConfig } from "./config-template";
 import { expectInvalid, validConfig } from "./config-template.test-helpers";
 
 describe("validateSubBoostTemplateConfig field validation", () => {
@@ -87,6 +87,35 @@ describe("validateSubBoostTemplateConfig field validation", () => {
           {
             id: "relay",
             name: "Relay",
+            type: "load-balance",
+            strategy: "bad" as never,
+            relayNodes: [],
+            targetNodes: [],
+          },
+        ],
+      },
+      "dialerProxyGroups.strategy 无效"
+    );
+    expectInvalid(
+      {
+        dialerProxyGroups: [
+          {
+            id: "relay",
+            name: "Relay",
+            type: "select",
+            relayNodes: [],
+            targetNodes: [1 as never],
+          },
+        ],
+      },
+      "dialerProxyGroups.targetNodes 只能包含字符串"
+    );
+    expectInvalid(
+      {
+        dialerProxyGroups: [
+          {
+            id: "relay",
+            name: "Relay",
             type: "select",
             relayNodes: [],
             targetNodes: [],
@@ -101,6 +130,34 @@ describe("validateSubBoostTemplateConfig field validation", () => {
     expectInvalid(
       { customRuleSets: [1 as never] },
       "customRuleSets 只能包含对象"
+    );
+    expectInvalid(
+      {
+        customRuleSets: [
+          {
+            id: "",
+            name: "Bad",
+            behavior: "domain",
+            path: "geosite/private.mrs",
+            target: "DIRECT",
+          },
+        ],
+      },
+      "customRuleSets.id 不能为空"
+    );
+    expectInvalid(
+      {
+        customRuleSets: [
+          {
+            id: "bad",
+            name: "",
+            behavior: "domain",
+            path: "geosite/private.mrs",
+            target: "DIRECT",
+          },
+        ],
+      },
+      "customRuleSets.name 不能为空"
     );
     expectInvalid(
       {
@@ -129,6 +186,34 @@ describe("validateSubBoostTemplateConfig field validation", () => {
         ],
       },
       "customRuleSets.path 无效"
+    );
+    expectInvalid(
+      {
+        customRuleSets: [
+          {
+            id: "bad",
+            name: "Bad",
+            behavior: "domain",
+            path: "",
+            target: "DIRECT",
+          },
+        ],
+      },
+      "customRuleSets.path 不能为空"
+    );
+    expectInvalid(
+      {
+        customRuleSets: [
+          {
+            id: "bad",
+            name: "Bad",
+            behavior: "domain",
+            path: "geosite/private.mrs",
+            target: "",
+          },
+        ],
+      },
+      "customRuleSets.target 不能为空"
     );
     expectInvalid(
       {
@@ -201,6 +286,8 @@ describe("validateSubBoostTemplateConfig field validation", () => {
       ok: false,
       error: "testUrl 必须是 http(s) URL",
     });
+    expectInvalid({ testUrl: "" }, "testUrl 不能为空");
+    expectInvalid({ testInterval: 1.5 }, "testInterval 必须是正整数");
     expectInvalid({ ruleProviderBaseUrl: "ftp://example.com" }, "ruleProviderBaseUrl 必须是 http(s) URL");
     expectInvalid({ proxyGroupNameOverrides: "bad" as never }, "proxyGroupNameOverrides 必须是对象");
     expect(
@@ -212,5 +299,23 @@ describe("validateSubBoostTemplateConfig field validation", () => {
         })
       )
     ).toEqual({ ok: false, error: "proxyGroupNameOverrides 的值必须是字符串" });
+    expectInvalid({ ruleOrder: "bad" as never }, "ruleOrder 必须是数组");
+    expectInvalid({ ruleOrder: ["module:auto", 1 as never] }, "ruleOrder 只能包含字符串");
+    const defaultDialerStrategy = validateSubBoostTemplateConfig(
+      validConfig({
+        dialerProxyGroups: [
+          {
+            id: "relay",
+            name: "Relay",
+            type: "load-balance",
+            relayNodes: ["Relay"],
+            targetNodes: ["Target"],
+          },
+        ],
+      })
+    );
+    expect(defaultDialerStrategy.ok && defaultDialerStrategy.config.dialerProxyGroups[0]).toMatchObject({
+      strategy: "consistent-hashing",
+    });
   });
 });
