@@ -175,10 +175,27 @@ function replaceInstallerDefault(content, item, replacement) {
   return content.replace(expected, replacementLine);
 }
 
+function withInferredInstallerDefaults(args) {
+  const inferred = { ...args };
+  const releaseAssetBaseUrl = args.baseUrl || "";
+  const releaseImageTag =
+    args.imageTag || (args.releaseTag ? `${args.imageRepository || DEFAULT_IMAGE_REPOSITORY}:${args.releaseTag}` : "");
+
+  if (releaseAssetBaseUrl) {
+    inferred.installerReleaseUrl = inferred.installerReleaseUrl || urlJoin(releaseAssetBaseUrl, "release.json");
+    inferred.installerComposeUrl =
+      inferred.installerComposeUrl || urlJoin(releaseAssetBaseUrl, "docker-compose.image.yml");
+    inferred.installerManagerUrl = inferred.installerManagerUrl || urlJoin(releaseAssetBaseUrl, MANAGER_ASSET_NAME);
+  }
+  if (releaseAssetBaseUrl && releaseImageTag) inferred.installerImage = inferred.installerImage || releaseImageTag;
+  return inferred;
+}
+
 function rewriteInstallerDefaults(content, args) {
+  const resolvedArgs = withInferredInstallerDefaults(args);
   let output = content;
   for (const item of INSTALLER_DEFAULTS) {
-    const replacement = args[item.key];
+    const replacement = resolvedArgs[item.key];
     if (replacement) output = replaceInstallerDefault(output, item, replacement);
   }
   return output;
