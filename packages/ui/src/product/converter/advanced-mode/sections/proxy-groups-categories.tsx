@@ -290,7 +290,7 @@ export function ProxyGroupsCategories() {
 
   return (
     <>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-[minmax(0,1fr)_96px]">
+      <div className="grid grid-cols-[minmax(0,1fr)_96px] gap-3">
         <div className="min-w-0 space-y-1">
           <div className={PROXY_GROUP_SECTION_LABEL_ROW_CLASS}>
             <label className={PROXY_GROUP_SECTION_LABEL_CLASS}>规则集 URL</label>
