@@ -210,6 +210,7 @@ jobs:
             --image-tag "${IMAGE_NAME}:dev" \
             --base-url "${dev_base_url}" \
             --installer-release-url "${dev_base_url}/release.json" \
+            --installer-update-release-url "${dev_base_url}/release.json" \
             --installer-compose-url "${dev_base_url}/docker-compose.image.yml" \
             --installer-manager-url "${dev_base_url}/subboost-manager" \
             --installer-image "${IMAGE_NAME}:dev"

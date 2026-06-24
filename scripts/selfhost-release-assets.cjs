@@ -15,6 +15,13 @@ const INSTALLER_DEFAULTS = [
     value: "https://github.com/SubBoost/subboost/releases/latest/download/release.json",
   },
   {
+    arg: "--installer-update-release-url",
+    env: "SUBBOOST_INSTALLER_UPDATE_RELEASE_URL",
+    key: "installerUpdateReleaseUrl",
+    name: "DEFAULT_UPDATE_RELEASE_URL",
+    value: "https://github.com/SubBoost/subboost/releases/latest/download/release.json",
+  },
+  {
     arg: "--installer-compose-url",
     env: "SUBBOOST_INSTALLER_COMPOSE_URL",
     key: "installerComposeUrl",
@@ -40,7 +47,7 @@ const INSTALLER_DEFAULTS = [
 function usage() {
   return [
     "Usage:",
-    "  node scripts/selfhost-release-assets.cjs [--output <dir>] [--image <image>] [--image-tag <image>] [--base-url <url>] [--tag <vX.Y.Z>] [--build-sha <sha>] [--installer-release-url <url>] [--installer-compose-url <url>] [--installer-manager-url <url>] [--installer-image <image>] [--dry-run]",
+    "  node scripts/selfhost-release-assets.cjs [--output <dir>] [--image <image>] [--image-tag <image>] [--base-url <url>] [--tag <vX.Y.Z>] [--build-sha <sha>] [--installer-release-url <url>] [--installer-update-release-url <url>] [--installer-compose-url <url>] [--installer-manager-url <url>] [--installer-image <image>] [--dry-run]",
     "",
     "Creates release.json, install.sh, docker-compose.image.yml, and subboost-manager for GitHub Release assets.",
   ].join("\n");

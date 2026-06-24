@@ -131,6 +131,13 @@ write_env_value() {
   install_secret_file "$tmp" "$ENV_FILE"
 }
 
+write_runtime_env_value() {
+  local key="$1"
+  local value="$2"
+  write_env_value "$key" "$value"
+  export "$key=$value"
+}
+
 install_file_from_url() {
   local url="$1"
   local destination="$2"
@@ -278,14 +285,14 @@ update_cmd() {
     image="$(json_get image "$release_file" || true)"
     compose_url="$(resolve_url "$release_url" "$(json_get composeUrl "$release_file" || true)")"
     manager_url="$(resolve_url "$release_url" "$(json_get managerUrl "$release_file" || true)")"
-    if [ -n "$image" ]; then write_env_value SUBBOOST_IMAGE "$image"; fi
+    if [ -n "$image" ]; then write_runtime_env_value SUBBOOST_IMAGE "$image"; fi
     if [ -n "$compose_url" ]; then
       install_file_from_url "$compose_url" "$COMPOSE_FILE" 644
-      write_env_value SUBBOOST_COMPOSE_URL "$compose_url"
+      write_runtime_env_value SUBBOOST_COMPOSE_URL "$compose_url"
     fi
     if [ -n "$manager_url" ]; then
       install_file_from_url "$manager_url" "${SUBBOOST_BIN:-/usr/local/bin/subboost}" 755
-      write_env_value SUBBOOST_MANAGER_URL "$manager_url"
+      write_runtime_env_value SUBBOOST_MANAGER_URL "$manager_url"
     fi
   else
     say "Release manifest unavailable; updating current image and compose only."
