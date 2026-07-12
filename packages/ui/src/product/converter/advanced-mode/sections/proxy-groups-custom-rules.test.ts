@@ -211,12 +211,6 @@ describe("ProxyGroupsCustomRules", () => {
       removeCustomRule: vi.fn(),
       enabledProxyGroups: ["auto"],
       customProxyGroups: [{ id: "custom-1", name: "Custom Group", rules: [] }],
-      filteredProxyGroups: [
-        { name: " Filter Group ", enabled: true },
-        { name: "Disabled", enabled: false },
-        { name: "   ", enabled: true },
-        { name: 123, enabled: true },
-      ],
       proxyGroupNameOverrides: { auto: "节点选择" },
     };
   });
@@ -248,6 +242,7 @@ describe("ProxyGroupsCustomRules", () => {
     expect(html).toContain(RULE_HEADER_ROW_CLASS);
     expect(html).toContain(RULE_EDIT_PRIMARY_GROUP_CLASS);
     expect(html).toContain(RULE_EDIT_TRAILING_CONTROLS_CLASS);
+    expect(html).toContain("proxy-group-rule-no-resolve-label");
     expect(RULE_EDIT_TRAILING_CONTROLS_CLASS).toContain(
       "proxy-group-custom-rule-editor-trailing",
     );
@@ -278,7 +273,6 @@ describe("ProxyGroupsCustomRules", () => {
           "REJECT",
           "节点选择",
           "Custom Group",
-          "Filter Group",
           "Legacy Target",
         ],
         existingRules: [],
@@ -295,6 +289,7 @@ describe("ProxyGroupsCustomRules", () => {
     expect(setters[1]).toHaveBeenCalledWith("example.com");
     mocks.captures.selects[0].onValueChange("IP-CIDR");
     expect(setters[0]).toHaveBeenCalledWith("IP-CIDR");
+    expect(setters[3]).toHaveBeenCalledWith(true);
     mocks.captures.selects[1].onValueChange("DIRECT");
     expect(setters[2]).toHaveBeenCalledWith("DIRECT");
     mocks.captures.switches[0].onCheckedChange(false);
@@ -304,13 +299,14 @@ describe("ProxyGroupsCustomRules", () => {
   it.each([
     ["DOMAIN", "domain"],
     ["IP-CIDR", "ipcidr"],
+    ["IP-CIDR6", "ipcidr"],
     ["GEOIP", "geo"],
     ["PROCESS-NAME", "process"],
     ["DST-PORT", "port"],
   ] as const)(
     "adds a %s rule and records the product interaction kind",
     (type, kind) => {
-      renderRules({ 0: type, 1: " value ", 2: "DIRECT", 3: true });
+      const { setters } = renderRules({ 0: type, 1: " value ", 2: "DIRECT", 3: true });
 
       mocks.captures.buttons
         .find((props) => props.children === "添加规则")
@@ -327,6 +323,7 @@ describe("ProxyGroupsCustomRules", () => {
         source: "manual",
         kind,
       });
+      expect(setters[3]).toHaveBeenCalledWith(type.startsWith("IP-CIDR"));
     },
   );
 
@@ -432,7 +429,7 @@ describe("ProxyGroupsCustomRules", () => {
     expect(mocks.store.removeCustomRule).toHaveBeenCalledWith(0);
   });
 
-  it("ignores incomplete additions, records unknown rule kinds, and exits stale edits", () => {
+  it("ignores incomplete additions and exits stale edits", () => {
     renderRules({ 1: "   ", 2: "DIRECT" });
     mocks.captures.buttons
       .find((props) => props.children === "添加规则")
@@ -449,23 +446,7 @@ describe("ProxyGroupsCustomRules", () => {
       "REJECT",
       "节点选择",
       "Custom Group",
-      "Filter Group",
     ]);
-
-    renderRules({ 0: "RULE-SET" as any, 1: " rule.mrs ", 2: "DIRECT" });
-    mocks.captures.buttons
-      .find((props) => props.children === "添加规则")
-      .onClick();
-    expect(mocks.store.addCustomRule).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "RULE-SET",
-        value: "rule.mrs",
-      }),
-    );
-    expect(mocks.interactions.ruleAdded).toHaveBeenCalledWith({
-      source: "manual",
-      kind: "unknown",
-    });
 
     const stale = renderRules(
       {

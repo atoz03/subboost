@@ -43,7 +43,7 @@ describe("local setup admin route", () => {
     mocks.readJsonBody.mockResolvedValueOnce(null);
     expect(await readJson(await POST(new Request("https://local.test/api/setup/admin")))).toMatchObject({
       status: 400,
-      body: { error: "Invalid JSON body.", code: "BAD_REQUEST" },
+      body: { error: "请求格式有误，请刷新页面后重试", code: "BAD_REQUEST" },
     });
 
     mocks.readJsonBody.mockResolvedValueOnce({ username: "ry", password: "bad", passwordConfirm: "bad" });

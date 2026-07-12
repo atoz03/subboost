@@ -1,41 +1,47 @@
-# SubBoost v2.4.1
+# SubBoost v2.6.1
 
 ## 中文
 
-### 多账号与自托管收口
+### 更新重点
 
-这个版本主要补齐了自托管部署、多账号和配置管理的关键缺口，适合直接部署到自己的生产环境中使用。
+SubBoost v2.6.1 合并上游 v2.6.0 的代理组、订阅解析和自部署改进，并保留本地多账号、数据库会话、配置导入导出和外部 PostgreSQL 部署能力。
 
-### 包含内容
+### 主要变化
 
-- 单应用容器部署，默认复用外部 PostgreSQL，不再要求本地 `db`/`cron` 容器。
-- 新增 GitHub Actions：`main`/PR 自动执行 CI，`v*` tag 自动构建并发布 GHCR 多架构镜像。
-- 本地模式支持多账号同权登录，账号可新增、改名、改密码。
-- 登录会话改为数据库会话，写接口统一接入 CSRF 校验，并补充同源校验。
-- 下线模板库入口，改为真正的配置导入导出，支持 JSON/YAML 导入。
+- 高级代理组支持批量添加或移除全部节点、全部代理组，并可恢复默认成员；批量添加时会跳过可能形成循环引用的项目。
+- 代理组成员区域分别显示节点数和代理组数，卡片统计不再把 `DIRECT`、`REJECT` 或代理组引用计入真实节点。
+- 改进 Clash/Mihomo YAML 导入兼容性，支持单行对象列表及常见的缩进不一致。
+- 修复 VMess、VLESS、Trojan 和 AnyTLS 分享链接中的 ECH 查询服务器名称在转换时丢失的问题。
+- 自部署备份在数据库导出失败时安全终止，不再保留不完整备份；保留数量可通过 `SUBBOOST_BACKUP_RETENTION_COUNT` 调整。
+- 保留多账号同权登录、账号新增、改名和密码修改功能，并继续按账号隔离订阅与配置数据。
+- 保留数据库会话、CSRF 与同源保护，以及外部 PostgreSQL 的单应用容器部署方式。
 
-### 安装和更新
+### 升级说明
 
-- 现有自托管环境升级到这个版本前，请先备份数据库和 `/opt/subboost/.env`。
-- 使用外部 PostgreSQL 时，请确认 `DATABASE_URL` 已正确配置。
-- 发布后可以继续使用 `subboost update` 更新。
+- 升级前请备份 `/opt/subboost/.env` 和数据库。
+- 本版本包含 v2.5 的代理组模型调整；使用过旧筛选代理组的配置需要迁移到自定义代理组或分流代理组高级模式。
+- 多账号数据库结构保持兼容，不需要新增手动迁移步骤。
+- 使用外部 PostgreSQL 时，请继续确认 `DATABASE_URL` 可从应用和管理脚本所在环境访问。
 
 ## English
 
-### Self-Hosting and Multi-User Improvements
+### Highlights
 
-This release closes several gaps around self-hosting, multi-user access, and configuration management so the project can be deployed more cleanly in a production environment.
+SubBoost v2.6.1 integrates the upstream v2.6.0 proxy-group, subscription parsing, and self-hosting improvements while retaining local multi-account authentication, database-backed sessions, configuration import and export, and external PostgreSQL deployment support.
 
-### What's Included
+### Main Changes
 
-- Single-app container deployment with external PostgreSQL as the default production model.
-- GitHub Actions for CI on `main` and pull requests, plus multi-arch GHCR image publishing on `v*` tags.
-- Multi-account local auth with peer-level accounts, including create, rename, and password update flows.
-- Database-backed sessions, CSRF protection for write routes, and same-origin request checks.
-- Template library entry removed from local mode and replaced with real JSON/YAML config import and export.
+- Advanced proxy groups can add or remove all nodes or proxy groups in one action and restore default members while avoiding circular references.
+- Member summaries distinguish real nodes from proxy-group references and built-in targets such as `DIRECT` and `REJECT`.
+- Clash/Mihomo YAML imports accept inline object lists and common indentation inconsistencies.
+- ECH query server names are preserved for VMess, VLESS, Trojan, and AnyTLS share links.
+- Self-hosted backups stop safely when database export fails, and retention is configurable with `SUBBOOST_BACKUP_RETENTION_COUNT`.
+- Peer-level multi-account login, account creation, rename, password updates, and per-account data isolation remain available.
+- Database-backed sessions, CSRF and same-origin protection, and the external PostgreSQL single-app deployment model remain available.
 
-### Installation and Updates
+### Upgrade Notes
 
-- Back up the database and `/opt/subboost/.env` before upgrading an existing self-hosted installation.
-- When using external PostgreSQL, make sure `DATABASE_URL` is configured correctly.
-- Future upgrades can continue to use `subboost update`.
+- Back up `/opt/subboost/.env` and the database before upgrading.
+- This release includes the v2.5 proxy-group model changes. Migrate legacy filtered proxy groups to custom groups or advanced proxy-group mode.
+- The existing multi-account database schema remains compatible and requires no additional manual migration.
+- For external PostgreSQL deployments, keep `DATABASE_URL` reachable from both the application and the management script environment.

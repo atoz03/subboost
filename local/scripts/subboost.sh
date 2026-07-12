@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 DEFAULT_HOME="/opt/subboost"
+DEFAULT_STABLE_RELEASE_URL="https://github.com/SubBoost/subboost/releases/latest/download/release.json"
+DEFAULT_BACKUP_RETENTION_COUNT="10"
 SUBBOOST_HOME="${SUBBOOST_HOME:-$DEFAULT_HOME}"
 ENV_FILE="$SUBBOOST_HOME/.env"
 COMPOSE_FILE="$SUBBOOST_HOME/docker-compose.yml"
@@ -131,6 +133,27 @@ write_env_value() {
   install_secret_file "$tmp" "$ENV_FILE"
 }
 
+write_runtime_env_value() {
+  local key="$1"
+  local value="$2"
+  write_env_value "$key" "$value"
+  export "$key=$value"
+}
+
+is_official_fixed_release_url() {
+  case "$1" in
+    https://github.com/SubBoost/subboost/releases/download/v[0-9]*.[0-9]*.[0-9]*/release.json) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+migrate_update_release_url() {
+  local release_url="$1"
+  is_official_fixed_release_url "$release_url" || return 1
+  say "Detected old fixed release update source; switching updates to stable latest."
+  write_runtime_env_value SUBBOOST_RELEASE_URL "$DEFAULT_STABLE_RELEASE_URL"
+}
+
 install_file_from_url() {
   local url="$1"
   local destination="$2"
@@ -203,17 +226,25 @@ health_status_text() {
 }
 
 health_status_code() {
-  local port base
+  local port base live_ok
   port="$(port_number "${SUBBOOST_PORT:-3000}")"
   base="http://127.0.0.1:$port"
   if ! command -v curl >/dev/null 2>&1; then
     printf 'curl-missing\n'
-  elif curl -fsS "$base/api/health/live" >/dev/null 2>&1 && curl -fsS "$base/api/health/ready" >/dev/null 2>&1; then
-    printf 'ok\n'
-  elif curl -fsS "$base/api/health/live" >/dev/null 2>&1; then
-    printf 'not-ready\n'
   else
-    printf 'unhealthy\n'
+    if curl -fsS "$base/api/health/live" >/dev/null 2>&1; then
+      live_ok=1
+    else
+      live_ok=0
+    fi
+
+    if [ "$live_ok" = "1" ] && curl -fsS "$base/api/health/ready" >/dev/null 2>&1; then
+      printf 'ok\n'
+    elif [ "$live_ok" = "1" ]; then
+      printf 'not-ready\n'
+    else
+      printf 'unhealthy\n'
+    fi
   fi
 }
 
@@ -227,6 +258,7 @@ health_status_label() {
 }
 
 wait_for_health() {
+  # Default max wait is about 30 seconds: 15 attempts with a 2-second interval.
   local attempts="${SUBBOOST_DOCTOR_HEALTH_ATTEMPTS:-15}"
   local interval="${SUBBOOST_DOCTOR_HEALTH_INTERVAL_SECONDS:-2}"
   local index status
@@ -273,18 +305,21 @@ update_cmd() {
   local release_file="$TMP_DIR/release.json"
   local image compose_url manager_url
   mkdir -p "$TMP_DIR"
+  if migrate_update_release_url "$release_url"; then
+    release_url="$DEFAULT_STABLE_RELEASE_URL"
+  fi
   if [ -n "$release_url" ] && download_to_temp "$release_url" "$release_file" 2>/dev/null; then
     image="$(json_get image "$release_file" || true)"
     compose_url="$(resolve_url "$release_url" "$(json_get composeUrl "$release_file" || true)")"
     manager_url="$(resolve_url "$release_url" "$(json_get managerUrl "$release_file" || true)")"
-    if [ -n "$image" ]; then write_env_value SUBBOOST_IMAGE "$image"; fi
+    if [ -n "$image" ]; then write_runtime_env_value SUBBOOST_IMAGE "$image"; fi
     if [ -n "$compose_url" ]; then
       install_file_from_url "$compose_url" "$COMPOSE_FILE" 644
-      write_env_value SUBBOOST_COMPOSE_URL "$compose_url"
+      write_runtime_env_value SUBBOOST_COMPOSE_URL "$compose_url"
     fi
     if [ -n "$manager_url" ]; then
       install_file_from_url "$manager_url" "${SUBBOOST_BIN:-/usr/local/bin/subboost}" 755
-      write_env_value SUBBOOST_MANAGER_URL "$manager_url"
+      write_runtime_env_value SUBBOOST_MANAGER_URL "$manager_url"
     fi
   else
     say "Release manifest unavailable; updating current image and compose only."
@@ -311,12 +346,25 @@ backup_cmd() {
   command -v pg_dump >/dev/null 2>&1 || die "pg_dump command is missing"
   local stamp db_tmp db_out env_out
   local -a sql_backups env_backups
-  local i
+  local -a backup_status
+  local i backup_retention_count
+  backup_retention_count="${SUBBOOST_BACKUP_RETENTION_COUNT:-$DEFAULT_BACKUP_RETENTION_COUNT}"
+  if ! [[ "$backup_retention_count" =~ ^[0-9]+$ ]] || (( backup_retention_count < 1 )); then
+    die "SUBBOOST_BACKUP_RETENTION_COUNT must be a positive integer"
+  fi
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   db_tmp="$BACKUP_DIR/subboost-$stamp.sql.gz.partial"
   db_out="$BACKUP_DIR/subboost-$stamp.sql.gz"
   env_out="$BACKUP_DIR/subboost-$stamp.env"
+  set +e
   pg_dump "$DATABASE_URL" | gzip -c | sudo_do tee "$db_tmp" >/dev/null
+  backup_status=("${PIPESTATUS[@]}")
+  set -e
+  if (( backup_status[0] != 0 || backup_status[1] != 0 || backup_status[2] != 0 )); then
+    sudo_do rm -f -- "$db_tmp"
+    say "Backup failed: pg_dump=${backup_status[0]} gzip=${backup_status[1]} write=${backup_status[2]}"
+    return 1
+  fi
   sudo_do mv "$db_tmp" "$db_out"
   sudo_do install -m 600 "$ENV_FILE" "$env_out"
 
@@ -325,10 +373,10 @@ backup_cmd() {
   env_backups=("$BACKUP_DIR"/subboost-*.env)
   shopt -u nullglob
 
-  for ((i = 0; i < ${#sql_backups[@]} - 10; i++)); do
+  for ((i = 0; i < ${#sql_backups[@]} - backup_retention_count; i++)); do
     sudo_do rm -f -- "${sql_backups[$i]}"
   done
-  for ((i = 0; i < ${#env_backups[@]} - 10; i++)); do
+  for ((i = 0; i < ${#env_backups[@]} - backup_retention_count; i++)); do
     sudo_do rm -f -- "${env_backups[$i]}"
   done
   say "Backup written:"
@@ -348,6 +396,7 @@ doctor_cmd() {
   [ -d "$SUBBOOST_HOME" ] || die "Missing $SUBBOOST_HOME"
   [ -f "$ENV_FILE" ] || die "Missing $ENV_FILE"
   [ -f "$COMPOSE_FILE" ] || die "Missing $COMPOSE_FILE"
+  load_env
   for key in SUBBOOST_IMAGE DATABASE_URL ENCRYPTION_KEY JWT_SECRET APP_URL SUBBOOST_PORT; do
     grep -q "^$key=" "$ENV_FILE" || die "Missing $key in $ENV_FILE"
   done
