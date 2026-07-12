@@ -190,19 +190,25 @@ describe("validateSubBoostTemplateConfig", () => {
     expect(result.config).not.toHaveProperty("experimentalCnUseCnRuleSet");
   });
 
-  it("rejects removed rule-model compatibility fields", () => {
-    expectInvalid({ moduleRuleOverrides: {} } as never, "模板配置包含已移除字段: moduleRuleOverrides");
-    expectInvalid({ moduleRuleExclusions: {} } as never, "模板配置包含已移除字段: moduleRuleExclusions");
-    expectInvalid({ allRulesOrderEditingEnabled: true } as never, "模板配置包含已移除字段: allRulesOrderEditingEnabled");
-    const removedFilteredGroupsField = `filtered${"ProxyGroups"}`;
-    expectInvalid(
-      { [removedFilteredGroupsField]: [] } as never,
-      `模板配置包含已移除字段: ${removedFilteredGroupsField}`
+  it("migrates legacy rule-model compatibility fields", () => {
+    const result = validateSubBoostTemplateConfig(
+      validConfig({
+        moduleRuleOverrides: {
+          google: [{ id: "custom-search", name: "Custom Search", path: "geosite/search.mrs" }],
+        },
+        moduleRuleExclusions: { ai: ["openai"] },
+        allRulesOrderEditingEnabled: true,
+        customProxyGroups: [{ id: "custom", name: "Custom", emoji: "", groupType: "select", rules: [] }],
+      } as never)
     );
-    expectInvalid(
-      { customProxyGroups: [{ id: "custom", name: "Custom", emoji: "", groupType: "select", rules: [] }] } as never,
-      "模板配置包含已移除字段: customProxyGroups[0].rules"
-    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.customProxyGroups).toHaveLength(1);
+    expect(result.config.customRuleSets).toEqual([
+      expect.objectContaining({ id: "custom-search", target: "🔍 谷歌服务" }),
+    ]);
+    expect(result.config.builtinRuleEdits).toEqual({ "module:ai:openai": { enabled: false } });
   });
 
   it("rejects template configs that hide every enabled module", () => {

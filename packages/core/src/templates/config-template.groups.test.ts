@@ -188,8 +188,8 @@ describe("validateSubBoostTemplateConfig custom groups", () => {
       "customProxyGroups.includeInGroupMembers 必须是布尔值"
     );
 
-    expectInvalid(
-      {
+    const migratedLegacyGroupRules = validateSubBoostTemplateConfig(
+      validConfig({
         customProxyGroups: [
           {
             id: "legacy",
@@ -199,9 +199,14 @@ describe("validateSubBoostTemplateConfig custom groups", () => {
             rules: [],
           } as never,
         ],
-      },
-      "模板配置包含已移除字段: customProxyGroups[0].rules"
+      })
     );
+    expect(migratedLegacyGroupRules.ok).toBe(true);
+    if (migratedLegacyGroupRules.ok) {
+      expect(migratedLegacyGroupRules.config.customProxyGroups).toEqual([
+        { id: "legacy", name: "Legacy", emoji: "L", groupType: "select", advanced: {} },
+      ]);
+    }
 
     const validCustomGroup = validateSubBoostTemplateConfig(
       validConfig({
@@ -252,7 +257,25 @@ describe("validateSubBoostTemplateConfig custom groups", () => {
       });
     }
 
-    const removedField = `filtered${"ProxyGroups"}`;
-    expectInvalid({ [removedField]: [] } as never, `模板配置包含已移除字段: ${removedField}`);
+    const migratedLegacyGroup = validateSubBoostTemplateConfig(
+      validConfig({
+        customProxyGroups: [],
+        filteredProxyGroups: [
+          { id: "legacy", name: "Legacy", enabled: true, groupType: "select", regions: ["us"] },
+        ],
+      } as never)
+    );
+    expect(migratedLegacyGroup.ok).toBe(true);
+    if (migratedLegacyGroup.ok) {
+      expect(migratedLegacyGroup.config.customProxyGroups).toEqual([
+        expect.objectContaining({
+          id: "migrated-filtered-legacy",
+          name: "Legacy",
+          memberSource: "filtered-nodes",
+          includeInGroupMembers: true,
+          advanced: { regions: ["us"] },
+        }),
+      ]);
+    }
   });
 });

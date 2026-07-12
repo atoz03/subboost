@@ -304,6 +304,62 @@ describe("useEditingSubscriptionLoader", () => {
     expect(options.setCopied).toHaveBeenCalledWith(false);
   });
 
+  it("migrates saved legacy filtered proxy groups into custom proxy groups", async () => {
+    const { generateConfig } = resetStoreState();
+    const options = makeOptions({
+      loadSubscription: vi.fn(async () =>
+        response(200, {
+          subscription: {
+            id: "sub-1",
+            token: "token-1",
+            name: "Legacy",
+            urls: [],
+            nodes: [],
+            config: {
+              customProxyGroups: [],
+              filteredProxyGroups: [
+                {
+                  id: "fast",
+                  name: "Fast",
+                  emoji: "F",
+                  enabled: true,
+                  groupType: "url-test",
+                  sourceIds: ["source-1"],
+                  regions: ["us"],
+                  includeRegex: "Premium",
+                  excludedNodeNames: ["Expired"],
+                },
+              ],
+            },
+          },
+        })
+      ),
+    });
+
+    useEditingSubscriptionLoader(options);
+    await flushAsync();
+
+    expect(mocks.bag.storeState.customProxyGroups).toEqual([
+      {
+        id: "migrated-filtered-fast",
+        name: "Fast",
+        emoji: "F",
+        description: "从旧版筛选代理组迁移",
+        memberSource: "filtered-nodes",
+        includeInGroupMembers: true,
+        groupType: "url-test",
+        advanced: {
+          sourceIds: ["source-1"],
+          regions: ["us"],
+          includeRegex: "Premium",
+          excludedMembers: [{ kind: "node", name: "Expired" }],
+        },
+      },
+    ]);
+    expect(mocks.bag.storeState.proxyGroupAdvancedModeEnabled).toBe(true);
+    expect(generateConfig).toHaveBeenCalled();
+  });
+
   it("falls back to URL sources when config sources are absent", async () => {
     const options = makeOptions({
       loadSubscription: vi.fn(async () =>

@@ -29,6 +29,36 @@ describe("subscription config utils", () => {
     });
   });
 
+  it("generates from legacy filtered proxy groups without changing stored input", () => {
+    const config = {
+      filteredProxyGroups: [
+        {
+          id: "fast",
+          name: "Fast",
+          enabled: true,
+          groupType: "select",
+          sourceIds: ["airport"],
+          regions: ["us"],
+        },
+      ],
+      customProxyGroups: [],
+    };
+
+    const options = buildGenerateOptionsFromConfig(config, { nodes: [node()] });
+
+    expect(options.customProxyGroups).toEqual([
+      expect.objectContaining({
+        id: "migrated-filtered-fast",
+        name: "Fast",
+        memberSource: "filtered-nodes",
+        includeInGroupMembers: true,
+        groupType: "select",
+        advanced: { sourceIds: ["airport"], regions: ["us"] },
+      }),
+    ]);
+    expect(config).toHaveProperty("filteredProxyGroups");
+  });
+
   it("builds generate options from persisted config and strips imported node controls", () => {
     const options = buildGenerateOptionsFromConfig(
       {
