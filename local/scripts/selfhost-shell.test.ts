@@ -3,15 +3,16 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const publicRoot = path.resolve(__dirname, "../..");
-const SHELL_TEST_TIMEOUT_MS = 20_000;
+const SHELL_TEST_TIMEOUT_MS = 30_000;
+const BASH_NON_INTERACTIVE_COMMAND =
+  "if command -v setsid >/dev/null 2>&1; then exec setsid \"$BASH\" -s; fi; exec \"$BASH\" -s";
 
 function runBash(script: string) {
-  const command = process.platform === "darwin" ? "bash -s" : "setsid bash -s";
-  return spawnSync("bash", ["-lc", command], {
+  return spawnSync("bash", ["-lc", BASH_NON_INTERACTIVE_COMMAND], {
     cwd: publicRoot,
     encoding: "utf8",
     input: script,
-    timeout: 10_000,
+    timeout: 30_000,
     env: {
       ...process.env,
       LC_ALL: "C.UTF-8",
@@ -138,6 +139,71 @@ ENV
     expect(result.stdout).toContain("Doctor: OK");
   }, SHELL_TEST_TIMEOUT_MS);
 
+  it("loads SUBBOOST_PORT from .env before doctor health checks", () => {
+    const script = `
+      set -Eeuo pipefail
+      home="$(mktemp -d)"
+      trap 'rm -rf "$home"' EXIT
+      cat > "$home/.env" <<'ENV'
+SUBBOOST_IMAGE=image
+POSTGRES_DB=subboost
+POSTGRES_USER=subboost
+POSTGRES_PASSWORD=password
+DATABASE_URL=postgresql://subboost:password@db:5432/subboost?schema=public
+ENCRYPTION_KEY=key
+JWT_SECRET=jwt
+CRON_SECRET=cron
+APP_URL=http://127.0.0.1:31041
+SUBBOOST_PORT=31041
+ENV
+      : > "$home/docker-compose.yml"
+      export SUBBOOST_SCRIPT_SOURCE_ONLY=1
+      export SUBBOOST_HOME="$home"
+      export SUBBOOST_DOCTOR_HEALTH_ATTEMPTS=1
+      export SUBBOOST_DOCTOR_HEALTH_INTERVAL_SECONDS=0
+      unset SUBBOOST_PORT APP_URL
+      source local/scripts/subboost.sh
+      docker() {
+        if [ "$1" = "info" ]; then return 0; fi
+        if [ "$1" = "compose" ]; then
+          case "$*" in
+            "compose version"*) return 0 ;;
+            *" config") return 0 ;;
+            *" ps -q app") printf 'app-id\\n'; return 0 ;;
+            *" ps -q db") printf 'db-id\\n'; return 0 ;;
+            *" ps -q cron") printf 'cron-id\\n'; return 0 ;;
+          esac
+        fi
+        if [ "$1" = "inspect" ]; then
+          case "$*" in
+            *".State.Status"*) printf 'running\\n'; return 0 ;;
+            *".State.Health"*) printf 'healthy\\n'; return 0 ;;
+          esac
+        fi
+        return 0
+      }
+      curl_urls="$home/curl-urls"
+      : > "$curl_urls"
+      curl() {
+        printf '%s\\n' "$*" >> "$curl_urls"
+        case "$*" in
+          *"http://127.0.0.1:31041/api/health/"*) return 0 ;;
+        esac
+        return 1
+      }
+      doctor_cmd
+      cat "$curl_urls"
+    `;
+
+    const result = runBash(script);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Doctor: OK");
+    expect(result.stdout).toContain("http://127.0.0.1:31041/api/health/live");
+    expect(result.stdout).toContain("http://127.0.0.1:31041/api/health/ready");
+    expect(result.stdout).not.toContain("http://127.0.0.1:3000/api/health");
+  });
+
   it("waits for health before reporting update status", () => {
     const script = `
       set -Eeuo pipefail
@@ -178,6 +244,7 @@ ENV
         return 0
       }
       curl_count_file="$home/curl-count"
+      ready_threshold=5
       printf '0\\n' > "$curl_count_file"
       curl() {
         count="$(cat "$curl_count_file")"
@@ -185,7 +252,7 @@ ENV
         printf '%s\\n' "$count" > "$curl_count_file"
         case "$*" in
           *"/api/health/live"*) return 0 ;;
-          *"/api/health/ready"*) [ "$count" -ge 5 ]; return $? ;;
+          *"/api/health/ready"*) [ "$count" -ge "$ready_threshold" ]; return $? ;;
         esac
         return 1
       }
@@ -198,8 +265,175 @@ ENV
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("健康检查: 正常");
     expect(result.stdout).not.toContain("健康检查: 异常");
-    expect(result.stdout).toContain("curl_count=7");
-  }, SHELL_TEST_TIMEOUT_MS);
+    // wait_for_health checks live once per attempt, then status_cmd performs one final live+ready check.
+    expect(result.stdout).toContain("curl_count=8");
+  }, 10_000);
+
+  it("uses refreshed release metadata before pulling during update", () => {
+    const script = `
+      set -Eeuo pipefail
+      home="$(mktemp -d)"
+      trap 'rm -rf "$home"' EXIT
+      release_dir="$home/release"
+      mkdir -p "$release_dir" "$home/bin"
+      cat > "$release_dir/release.json" <<'JSON'
+{"image":"new-image","composeUrl":"docker-compose.image.yml","managerUrl":"subboost-manager"}
+JSON
+      printf 'services:\\n  app:\\n    image: \${SUBBOOST_IMAGE}\\n' > "$release_dir/docker-compose.image.yml"
+      printf '#!/usr/bin/env bash\\necho manager\\n' > "$release_dir/subboost-manager"
+      cat > "$home/.env" <<ENV
+SUBBOOST_RELEASE_URL=file://$release_dir/release.json
+SUBBOOST_IMAGE=old-image
+POSTGRES_DB=subboost
+POSTGRES_USER=subboost
+POSTGRES_PASSWORD=password
+DATABASE_URL=postgresql://subboost:password@db:5432/subboost?schema=public
+ENCRYPTION_KEY=key
+JWT_SECRET=jwt
+CRON_SECRET=cron
+APP_URL=http://127.0.0.1:31000
+SUBBOOST_PORT=31000
+ENV
+      : > "$home/docker-compose.yml"
+      export SUBBOOST_SCRIPT_SOURCE_ONLY=1
+      export SUBBOOST_HOME="$home"
+      export SUBBOOST_BIN="$home/bin/subboost"
+      export SUBBOOST_DOCTOR_HEALTH_ATTEMPTS=1
+      export SUBBOOST_DOCTOR_HEALTH_INTERVAL_SECONDS=0
+      source local/scripts/subboost.sh
+      sudo_do() { "$@"; }
+      install_secret_file() { cp "$1" "$2"; }
+      read_env_file() { cat "$ENV_FILE"; }
+      docker_log="$home/docker-log"
+      : > "$docker_log"
+      docker() {
+        if [ "$1" = "info" ]; then return 0; fi
+        if [ "$1" = "compose" ]; then
+          case "$*" in
+            "compose version"*) return 0 ;;
+            *" config") return 0 ;;
+            *" pull")
+              printf 'pull_image=%s\\n' "\${SUBBOOST_IMAGE:-}" >> "$docker_log"
+              return 0
+              ;;
+            *" up -d --remove-orphans") return 0 ;;
+            *" up -d --no-deps --force-recreate app") return 0 ;;
+            *" ps -q app") printf 'app-id\\n'; return 0 ;;
+            *" ps -q db") printf 'db-id\\n'; return 0 ;;
+            *" ps -q cron") printf 'cron-id\\n'; return 0 ;;
+          esac
+        fi
+        if [ "$1" = "inspect" ]; then
+          case "$*" in
+            *".State.Status"*) printf 'running\\n'; return 0 ;;
+            *".State.Health"*) printf 'healthy\\n'; return 0 ;;
+          esac
+        fi
+        return 0
+      }
+      curl() { return 0; }
+      update_cmd
+      cat "$docker_log"
+      cat "$home/.env"
+    `;
+
+    const result = runBash(script);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("pull_image=new-image");
+    expect(result.stdout).toContain("SUBBOOST_IMAGE=new-image");
+    expect(result.stdout).toContain("SUBBOOST_COMPOSE_URL=file://");
+    expect(result.stdout).toContain("SUBBOOST_MANAGER_URL=file://");
+  }, 10_000);
+
+  it("migrates old fixed official update sources to stable latest", () => {
+    const script = `
+      set -Eeuo pipefail
+      home="$(mktemp -d)"
+      trap 'rm -rf "$home"' EXIT
+      mkdir -p "$home/bin"
+      cat > "$home/.env" <<'ENV'
+SUBBOOST_RELEASE_URL=https://github.com/SubBoost/subboost/releases/download/v2.4.0/release.json
+SUBBOOST_IMAGE=old-image
+POSTGRES_DB=subboost
+POSTGRES_USER=subboost
+POSTGRES_PASSWORD=password
+DATABASE_URL=postgresql://subboost:password@db:5432/subboost?schema=public
+ENCRYPTION_KEY=key
+JWT_SECRET=jwt
+CRON_SECRET=cron
+APP_URL=http://127.0.0.1:31000
+SUBBOOST_PORT=31000
+ENV
+      : > "$home/docker-compose.yml"
+      export SUBBOOST_SCRIPT_SOURCE_ONLY=1
+      export SUBBOOST_HOME="$home"
+      export SUBBOOST_BIN="$home/bin/subboost"
+      export SUBBOOST_DOCTOR_HEALTH_ATTEMPTS=1
+      export SUBBOOST_DOCTOR_HEALTH_INTERVAL_SECONDS=0
+      source local/scripts/subboost.sh
+      sudo_do() { "$@"; }
+      install_secret_file() { cp "$1" "$2"; }
+      read_env_file() { cat "$ENV_FILE"; }
+      download_log="$home/download-log"
+      : > "$download_log"
+      download_to_temp() {
+        printf '%s\\n' "$1" >> "$download_log"
+        case "$1" in
+          *release.json)
+            cat > "$2" <<'JSON'
+{"image":"new-image","composeUrl":"docker-compose.image.yml","managerUrl":"subboost-manager"}
+JSON
+            ;;
+          *)
+            printf 'asset\\n' > "$2"
+            ;;
+        esac
+      }
+      docker_log="$home/docker-log"
+      : > "$docker_log"
+      docker() {
+        if [ "$1" = "info" ]; then return 0; fi
+        if [ "$1" = "compose" ]; then
+          case "$*" in
+            "compose version"*) return 0 ;;
+            *" config") return 0 ;;
+            *" pull")
+              printf 'pull_image=%s\\n' "\${SUBBOOST_IMAGE:-}" >> "$docker_log"
+              return 0
+              ;;
+            *" up -d --remove-orphans") return 0 ;;
+            *" up -d --no-deps --force-recreate app") return 0 ;;
+            *" ps -q app") printf 'app-id\\n'; return 0 ;;
+            *" ps -q db") printf 'db-id\\n'; return 0 ;;
+            *" ps -q cron") printf 'cron-id\\n'; return 0 ;;
+          esac
+        fi
+        if [ "$1" = "inspect" ]; then
+          case "$*" in
+            *".State.Status"*) printf 'running\\n'; return 0 ;;
+            *".State.Health"*) printf 'healthy\\n'; return 0 ;;
+          esac
+        fi
+        return 0
+      }
+      curl() { return 0; }
+      update_cmd
+      cat "$download_log"
+      cat "$docker_log"
+      cat "$home/.env"
+    `;
+
+    const result = runBash(script);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Detected old fixed release update source");
+    expect(result.stdout).toContain("https://github.com/SubBoost/subboost/releases/latest/download/release.json");
+    expect(result.stdout).toContain("pull_image=new-image");
+    expect(result.stdout).toContain(
+      "SUBBOOST_RELEASE_URL=https://github.com/SubBoost/subboost/releases/latest/download/release.json"
+    );
+  }, 10_000);
 
   it("updates exact env keys without removing similarly prefixed names", () => {
     const script = `

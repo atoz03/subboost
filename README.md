@@ -4,7 +4,7 @@
   <h1>SubBoost</h1>
   <p>
     <img src="https://img.shields.io/badge/platform-Linux%20%2B%20Docker-lightgrey.svg" alt="Platform: Linux + Docker">
-    <img src="https://img.shields.io/badge/version-2.4.1-green.svg" alt="Version 2.4.1">
+    <img src="https://img.shields.io/badge/version-2.6.1-green.svg" alt="Version 2.6.1">
     <a href="https://subboost.org"><img src="https://img.shields.io/badge/app-subboost.org-brightgreen.svg" alt="Online app"></a>
     <a href="https://docs.subboost.org"><img src="https://img.shields.io/badge/docs-subboost.org-blue.svg" alt="Documentation"></a>
     <img src="https://img.shields.io/badge/image-GHCR-blue.svg" alt="GHCR image">
@@ -34,10 +34,10 @@
 
 ## Usage & Deployment
 
-- [**Online entry**: A public service that can be used directly without deployment.](https://subboost.org/)
-- [**One-click deployment**: Best for beginners, using the public image to build the app.](https://docs.subboost.org/deploy/one-click)
-- [**Advanced deployment**: Best for advanced users, building the app from public source code.](https://docs.subboost.org/deploy/advanced)
-- [**Configuration guide**: Clash configuration simple enough for a paramecium: configure precise routing and chained proxies from the UI in one click.](https://ryanvan.com/t/topic/59?u=ryan)
+- Online entry: [No deployment required - direct access to the public service](https://subboost.org)
+- Deployment docs: [One-click deployment - pulls an image to build, faster with lower requirements](https://docs.subboost.org/deploy/one-click)
+- Deployment docs: [Advanced deployment - compiles from source, slower with higher requirements](https://docs.subboost.org/deploy/advanced)
+- Configuration guide: [Clash configuration simple enough for a paramecium: configure precise routing and chained proxies from the UI in one click](https://ryanvan.com/t/topic/59?u=ryan)
 
 ## Development Notes
 

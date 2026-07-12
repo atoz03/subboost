@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { LOCAL_ADMIN_CREDENTIAL_MESSAGES } from "@local/lib/admin-credentials";
 import { apiError, readJsonBody } from "@local/lib/http";
 import { createInitialAdmin } from "@local/lib/local-user-service";
 import {
@@ -11,7 +12,7 @@ import {
 
 export async function POST(request: Request) {
   const body = await readJsonBody(request);
-  if (!body) return apiError("Invalid JSON body.", "BAD_REQUEST", 400);
+  if (!body) return apiError(LOCAL_ADMIN_CREDENTIAL_MESSAGES.invalidJson, "BAD_REQUEST", 400);
 
   try {
     const user = await createInitialAdmin(body);
