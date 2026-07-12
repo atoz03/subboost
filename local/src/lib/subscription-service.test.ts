@@ -389,6 +389,37 @@ describe("local subscription service", () => {
     });
   });
 
+  it("removes legacy filtered groups when saving a subscription that was already migrated", async () => {
+    mocks.prisma.subscription.findFirst.mockResolvedValue(
+      row({
+        encryptedConfig: JSON.stringify({
+          sources: [{ id: "source-1", type: "url", content: "https://example.com/sub" }],
+          filteredProxyGroups: [{ id: "home", name: "Home", enabled: true, groupType: "select" }],
+          customProxyGroups: [
+            {
+              id: "migrated-filtered-home",
+              name: "Home",
+              emoji: "",
+              memberSource: "filtered-nodes",
+              includeInGroupMembers: true,
+              groupType: "select",
+              advanced: { sourceIds: ["source-1"] },
+            },
+          ],
+        }),
+      })
+    );
+
+    await updateSubscription("owner-1", "sub-1", { config: { testUrl: "https://test.example.com" } });
+
+    const updateCall = mocks.prisma.subscription.update.mock.calls.at(-1)?.[0];
+    const savedConfig = JSON.parse(updateCall.data.encryptedConfig);
+    expect(savedConfig).not.toHaveProperty("filteredProxyGroups");
+    expect(savedConfig.customProxyGroups).toEqual([
+      expect.objectContaining({ id: "migrated-filtered-home", name: "Home" }),
+    ]);
+  });
+
   it("builds fetch callbacks for refresh source imports", async () => {
     const callbacks = buildSubscriptionFetchCallbacks();
 

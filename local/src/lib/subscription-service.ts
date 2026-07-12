@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { generateClashYaml } from "@subboost/core/generator";
+import { migrateFilteredProxyGroupsConfig } from "@subboost/core/migrations/filtered-proxy-groups";
 import { buildGenerateOptionsFromConfig, getEffectiveTestOptions } from "@subboost/core/subscription/config-utils";
 import { buildProxyProvidersFromConfig } from "@subboost/core/subscription/proxy-providers";
 import type { SubscriptionResponseInfo } from "@subboost/core/subscription/subscription-response-info";
@@ -109,18 +110,19 @@ function buildLocalSubscriptionConfig(
   body: Record<string, unknown>,
   existingConfig: Record<string, unknown> = {}
 ): Record<string, unknown> {
-  return normalizeSubscriptionConfigForPersistence(
+  const config = normalizeSubscriptionConfigForPersistence(
     {
       config: body.config,
       smartNodeMatchingEnabled: body.smartNodeMatchingEnabled,
     },
     {
-      existingConfig,
+      existingConfig: migrateFilteredProxyGroupsConfig(existingConfig),
       idFactory: randomUUID,
       splitUrlLines: true,
       defaultSmartNodeMatchingEnabled: true,
     }
   );
+  return migrateFilteredProxyGroupsConfig(config);
 }
 
 export function readSubscriptionSecrets(row: SubscriptionRow) {

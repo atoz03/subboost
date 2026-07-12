@@ -85,6 +85,30 @@ describe("filtered proxy group config migration", () => {
     expect(migrateFilteredProxyGroupsConfig(migrated)).toBe(migrated);
   });
 
+  it("reuses a group migrated by an earlier save instead of appending a duplicate", () => {
+    const original = {
+      filteredProxyGroups: [{ id: "home", name: "Home", enabled: true, groupType: "select" }],
+      customProxyGroups: [
+        {
+          id: "migrated-filtered-home",
+          name: "Home",
+          emoji: "",
+          memberSource: "filtered-nodes",
+          includeInGroupMembers: true,
+          groupType: "select",
+          advanced: { sourceIds: ["airport"] },
+        },
+      ],
+      proxyGroupOrder: ["filtered:home"],
+    };
+
+    const migrated = migrateFilteredProxyGroupsConfig(original);
+
+    expect(migrated.customProxyGroups).toEqual(original.customProxyGroups);
+    expect(migrated.proxyGroupOrder).toEqual(["custom:migrated-filtered-home"]);
+    expect(migrated).not.toHaveProperty("filteredProxyGroups");
+  });
+
   it("moves legacy rule overrides, exclusions, and custom group rules into the current rule model", () => {
     const original = {
       customProxyGroups: [

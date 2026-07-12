@@ -207,6 +207,14 @@ export function migrateFilteredProxyGroupsConfig<T>(config: T): T {
     const oldName = stringValue(rawGroup.name);
     if (!oldId || !oldName) continue;
 
+    const migratedId = `migrated-filtered-${oldId}`;
+    const existingMigratedGroup = existingCustomGroups.find((group) => stringValue(group.id) === migratedId);
+    if (existingMigratedGroup) {
+      idMap.set(oldId, migratedId);
+      nameMap.set(oldName, stringValue(existingMigratedGroup.name) || oldName);
+      continue;
+    }
+
     const nextId = makeUniqueId(oldId, usedIds);
     const nextName = makeUniqueName(oldName, usedNames);
     idMap.set(oldId, nextId);
