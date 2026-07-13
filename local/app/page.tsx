@@ -42,8 +42,12 @@ function LocalHomePage() {
       if (!file) return;
       try {
         const raw = await file.text();
-        const config = parseImportedConfigText(raw);
-        importTemplateConfig(config);
+        const imported = parseImportedConfigText(raw);
+        importTemplateConfig(imported.config);
+        if (imported.workspace) {
+          useConfigStore.setState(imported.workspace);
+          useConfigStore.getState().generateConfig();
+        }
         toast({ title: "配置已导入", variant: "success" });
       } catch (error) {
         toast({
