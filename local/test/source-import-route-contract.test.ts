@@ -12,6 +12,10 @@ vi.mock("@local/lib/source-import", () => ({
   importSourceUrlDirect: vi.fn(),
 }));
 
+vi.mock("@local/lib/session", () => ({
+  validateCsrfToken: vi.fn(async () => true),
+}));
+
 const admin = { id: "admin-1", username: "root" };
 
 function jsonRequest(body: unknown): Request {
@@ -78,6 +82,19 @@ describe("local source import route", () => {
       code: "BAD_REQUEST",
     });
     expect(importSourceUrlDirect).not.toHaveBeenCalled();
+  });
+
+  it("rejects source import bodies above 64 KiB", async () => {
+    const response = await route.POST(new Request("http://local.test/api/source-import", {
+      method: "POST",
+      headers: { "content-length": String(64 * 1024 + 1) },
+      body: "{}",
+    }));
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      error: "Request body is too large.",
+      code: "PAYLOAD_TOO_LARGE",
+    });
   });
 
   it("normalizes optional userinfo fields and forwards import errors", async () => {

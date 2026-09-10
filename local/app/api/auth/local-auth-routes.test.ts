@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearLocalRateLimitsForTests } from "@local/lib/rate-limit";
 
 const mocks = vi.hoisted(() => ({
   createInitialAdmin: vi.fn(),
@@ -60,6 +61,7 @@ async function readJson(response: Response) {
 describe("local auth and health routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearLocalRateLimitsForTests();
   });
 
   it("logs in a valid local admin and sets the session cookie", async () => {
@@ -78,7 +80,11 @@ describe("local auth and health routes", () => {
 
     expect(await readJson(response)).toEqual({
       status: 200,
-      body: { success: true, user: { id: "admin-1", username: "admin" } },
+      body: {
+        success: true,
+        csrfToken: "csrf-token",
+        user: { id: "admin-1", username: "admin" },
+      },
     });
     expect(mocks.createSession).toHaveBeenCalledWith({ userId: "admin-1", username: "admin" });
     expect(response.headers.get("set-cookie")).toContain("subboost-local-session=session-token");
@@ -106,6 +112,15 @@ describe("local auth and health routes", () => {
     ).resolves.toEqual({
       status: 401,
       body: { error: "Invalid username or password.", code: "UNAUTHORIZED" },
+    });
+
+    await expect(readJson(await POST(new Request("https://local.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-length": String(64 * 1024 + 1) },
+      body: "{}",
+    })))).resolves.toEqual({
+      status: 413,
+      body: { error: "Request body is too large.", code: "PAYLOAD_TOO_LARGE" },
     });
   });
 

@@ -2,7 +2,7 @@ import { parseClashYaml } from "./clash-yaml";
 import { looksLikeConfigLine, parseConfigLine } from "./config-line-parser";
 import { parsePlatformConfigContent, looksLikePlatformConfigContent } from "./platform/parse-platform-config";
 import { parsePlatformProxyLine } from "./platform/parse-platform-proxy-line";
-import { parseNodeLink } from "./parse-node-link";
+import { parseNodeLinks } from "./parse-node-link";
 import type { ParseResult } from "@subboost/core/types/node";
 
 interface SubscriptionContentParser {
@@ -73,18 +73,14 @@ function looksLikeInlineFlowProxyList(content: string): boolean {
     hasItem = true;
     hasType ||= trimmed.includes("type:");
     hasServer ||= trimmed.includes("server:");
-    hasPort ||= trimmed.includes("port:") || trimmed.includes("ports:");
+    hasPort ||= trimmed.includes("port:") || trimmed.includes("ports:") || trimmed.includes("port-range:");
   }
 
   return hasItem && hasType && hasServer && hasPort;
 }
 
 export function isClashYamlContent(content: string): boolean {
-  if (
-    content.includes("proxies:") ||
-    content.includes("proxy-groups:") ||
-    content.includes("proxy-providers:")
-  ) {
+  if (/^(?:[ \t]*)(?:proxies|proxy-groups|proxy-providers)[ \t]*:/m.test(content)) {
     return true;
   }
 
@@ -94,7 +90,8 @@ export function isClashYamlContent(content: string): boolean {
   const hasServer = /(^|\n)\s*(?:-\s*)?server\s*:\s*\S+/i.test(content);
   const hasPort = /(^|\n)\s*(?:-\s*)?port\s*:\s*\d+/i.test(content);
   const hasPorts = /(^|\n)\s*(?:-\s*)?ports\s*:\s*\S+/i.test(content);
-  return hasType && hasServer && (hasPort || hasPorts);
+  const hasPortRange = /(^|\n)\s*(?:-\s*)?port-range\s*:\s*\S+/i.test(content);
+  return hasType && hasServer && (hasPort || hasPorts || hasPortRange);
 }
 
 export function parseLineBasedSubscriptionContent(content: string): ParseResult {
@@ -105,8 +102,7 @@ export function parseLineBasedSubscriptionContent(content: string): ParseResult 
     if (!segment || segment.startsWith("#")) continue;
 
     try {
-      const node = parseNodeLink(segment);
-      if (node) nodes.push(node);
+      nodes.push(...parseNodeLinks(segment));
     } catch (error) {
       errors.push(formatParseSegmentError(segment, error));
     }
@@ -188,7 +184,8 @@ export function parseSubscriptionContentByRegistry(content: string): ParseResult
       if (parser.name === "link-lines") {
         return buildParseResult(result.nodes, [...accumulatedErrors, ...result.errors]);
       }
-      return result;
+      if (result.nodes.length > 0) return result;
+      accumulatedErrors.push(...result.errors);
     } catch (error) {
       if (parser.name === "clash-yaml") {
         accumulatedErrors.push(`Clash YAML 解析失败: ${error instanceof Error ? error.message : "未知错误"}`);
@@ -200,5 +197,3 @@ export function parseSubscriptionContentByRegistry(content: string): ParseResult
 
   return buildParseResult([], accumulatedErrors);
 }
-
-

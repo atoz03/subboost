@@ -46,7 +46,7 @@ const PROXY_FIELD_ORDER_PROTOCOL: Partial<Record<KnownNodeType, string[]>> = {
   snell: ["psk", "version", "obfs-opts", "reuse"],
   direct: ["udp", "ip-version", "interface-name", "routing-mark"],
   dns: ["udp"],
-  mieru: ["username", "password", "transport", "port-range", "multiplexing", "handshake-mode"],
+  mieru: ["username", "password", "transport", "port-range", "multiplexing", "handshake-mode", "traffic-pattern"],
   masque: ["username", "password"],
   sudoku: [
     "key",
@@ -100,6 +100,7 @@ const UDP_SUPPORTED_TYPES = new Set<KnownNodeType>([
   "anytls",
   "hysteria2",
   "tuic",
+  "mieru",
   "socks5",
 ]);
 function getOrderedProxyKeys(node: Record<string, unknown>): string[] {
@@ -133,6 +134,10 @@ function getOrderedProxyKeys(node: Record<string, unknown>): string[] {
 function canonicalizeProxy(node: Record<string, unknown>): Record<string, unknown> {
   const copy = sanitizeMihomoProxyNode(node);
   const type = typeof copy.type === "string" ? copy.type : "";
+  if (type === "mieru" && typeof copy["port-range"] === "string" && copy["port-range"].trim()) {
+    // Mihomo 要求 port 与 port-range 二选一；内部 port 仅用于统一节点身份和排序。
+    delete copy.port;
+  }
   if (copy.udp === undefined && UDP_SUPPORTED_TYPES.has(type as KnownNodeType)) {
     copy.udp = true;
   }
@@ -235,6 +240,19 @@ function toInlineYaml(value: unknown): string {
     return `{${pairs.join(", ")}}`;
   }
   return String(value);
+}
+
+function toBlockSequenceScalar(value: string): string {
+  const trimmed = value.trim();
+  const ambiguous =
+    !value ||
+    trimmed !== value ||
+    /[\r\n#]/.test(value) ||
+    /:\s/.test(value) ||
+    /^[\-?:,\[\]{}&*!|>'"%@`]/.test(value) ||
+    /^(?:null|~|true|false|yes|no|on|off)$/i.test(value) ||
+    /^[+-]?(?:\d+|\d*\.\d+|\d+\.\d*)(?:[eE][+-]?\d+)?$/.test(value);
+  return ambiguous ? `"${escapeYamlDoubleQuotedString(value)}"` : value;
 }
 
 function normalizeDnsPolicyValue(value: unknown): DnsPolicyValue | null {
@@ -372,7 +390,7 @@ export function configToYaml(config: ClashConfig): string {
   lines.push("rules:");
   if (config.rules) {
     for (const rule of config.rules) {
-      lines.push(`  - ${rule}`);
+      lines.push(`  - ${toBlockSequenceScalar(rule)}`);
     }
   }
 

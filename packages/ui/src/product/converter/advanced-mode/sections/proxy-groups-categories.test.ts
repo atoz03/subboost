@@ -133,6 +133,12 @@ vi.mock("./proxy-groups-module-card", () => ({
     return null;
   },
 }));
+vi.mock("./group-advanced-settings-dialog", () => ({
+  GroupAdvancedSettingsDialog: (props: any) => {
+    mocks.captures.settingsDialogs.push(props);
+    return null;
+  },
+}));
 
 import { ProxyGroupsCategories } from "./proxy-groups-categories";
 import { generateProxyGroups } from "@subboost/core/generator/proxy-groups";
@@ -146,6 +152,7 @@ function renderCategories(overrides: Record<number, unknown> = {}) {
   mocks.captures.inputs = [];
   mocks.captures.dropdownItems = [];
   mocks.captures.moduleCards = [];
+  mocks.captures.settingsDialogs = [];
   mocks.captures.customPanelRendered = false;
   mocks.captures.customRulesRendered = false;
   try {
@@ -165,6 +172,7 @@ function renderCategoryTree(overrides: Record<number, unknown> = {}) {
   mocks.captures.inputs = [];
   mocks.captures.dropdownItems = [];
   mocks.captures.moduleCards = [];
+  mocks.captures.settingsDialogs = [];
   mocks.captures.customPanelRendered = false;
   mocks.captures.customRulesRendered = false;
   try {
@@ -193,7 +201,7 @@ describe("ProxyGroupsCategories", () => {
     vi.clearAllMocks();
     stateMock.refOverride = undefined;
     mocks.confirmDialog.mockResolvedValue(true);
-    mocks.captures = { inputs: [], dropdownItems: [], moduleCards: [] };
+    mocks.captures = { inputs: [], dropdownItems: [], moduleCards: [], settingsDialogs: [] };
     mocks.store = {
       ruleProviderBaseUrl: "https://rules.example/base/",
       nodes: [],
@@ -231,6 +239,11 @@ describe("ProxyGroupsCategories", () => {
       proxyGroupAdvancedModeEnabled: false,
       setProxyGroupAdvancedModeEnabled: vi.fn(),
       updateProxyGroupAdvanced: vi.fn(),
+      groupListeners: [],
+      setGroupListener: vi.fn(),
+      dnsYaml: "",
+      mixedPort: 7890,
+      listenerPorts: {},
     };
   });
 
@@ -268,7 +281,8 @@ describe("ProxyGroupsCategories", () => {
     expect(html).toContain("grid-cols-[minmax(0,1fr)_96px]");
     expect(html).not.toContain("md:grid-cols-[minmax(0,1fr)_96px]");
     expect(html).toContain("min-w-0 space-y-1");
-    expect(html).toContain("h-9 w-full");
+    expect(html).toContain("text-xs text-amber-300");
+    expect(html).toContain('aria-label="高级模式"');
     expect(mocks.store.setRuleProviderBaseUrl).not.toHaveBeenCalled();
 
     expect(mocks.captures.moduleCards).toHaveLength(1);
@@ -318,8 +332,10 @@ describe("ProxyGroupsCategories", () => {
     expect(mocks.store.removeModuleRule).toHaveBeenCalledWith("auto", "rule-a");
     card.onMoveRule("rule-a", "top");
     expect(mocks.store.moveModuleRule).toHaveBeenCalledWith("auto", "rule-a", "top");
-    card.onMoveManualRule("manual-1", "Fallback");
-    expect(mocks.store.updateCustomRule).toHaveBeenCalledWith("manual-1", { target: "Fallback" });
+    card.onMoveManualRule("manual-1", { kind: "module", id: "fallback", name: "Fallback" });
+    expect(mocks.store.updateCustomRule).toHaveBeenCalledWith("manual-1", {
+      target: { kind: "module", id: "fallback" },
+    });
     card.onRestoreRule("rule-a");
     expect(mocks.store.restoreModuleRule).toHaveBeenCalledWith("auto", "rule-a");
     card.onResetRuleTarget("rule-a");
@@ -416,29 +432,68 @@ describe("ProxyGroupsCategories", () => {
     expect(card.hiddenPresetRuleIds.auto).toContain("auto-rule");
     expect(card.hiddenPresetRuleIds.auto).toContain("moved-rule");
 
-    card.onChangeGroupType({ groupType: "load-balance" });
+    // 类型/监听改动统一走高级设置弹窗
+    card.onOpenAdvancedSettings();
+    expect(stateMock.setters[4]).toHaveBeenCalledWith("auto");
+
+    renderCategories({ 0: new Set(["core"]), 4: "auto" });
+    const settingsDialog = mocks.captures.settingsDialogs[0];
+    expect(settingsDialog.groupName).toBe("Auto Override");
+    settingsDialog.onSave({ groupType: "load-balance", strategy: "round-robin", listener: null });
     expect(mocks.store.updateProxyGroupAdvanced).toHaveBeenCalledWith("auto", {
       groupType: "load-balance",
       strategy: "round-robin",
     });
-    card.onChangeGroupType({ groupType: "fallback", strategy: "consistent-hashing" });
+    expect(mocks.store.setGroupListener).toHaveBeenCalledWith({ kind: "module", id: "auto" }, null);
+
+    settingsDialog.onSave({ groupType: "fallback", listener: { port: 7891, enabled: true, allowLan: false } });
     expect(mocks.store.updateProxyGroupAdvanced).toHaveBeenCalledWith("auto", {
       groupType: "fallback",
       strategy: undefined,
     });
-
-    mocks.store.proxyGroupAdvanced = { auto: {} };
-    renderCategories({ 0: new Set(["core"]) });
-    mocks.captures.moduleCards[0].onChangeGroupType({ groupType: "load-balance" });
-    expect(mocks.store.updateProxyGroupAdvanced).toHaveBeenCalledWith("auto", {
-      groupType: "load-balance",
-      strategy: "round-robin",
-    });
+    expect(mocks.store.setGroupListener).toHaveBeenCalledWith(
+      { kind: "module", id: "auto" },
+      { port: 7891, enabled: true, allowLan: false }
+    );
 
     const advancedElement = card.renderAdvancedContent(React.createElement("div", null, "rules"), 2);
     expect(advancedElement.props.target).toEqual({ kind: "module", id: "auto", name: "Auto Override" });
     advancedElement.props.onChange({ sourceIds: ["source-a"] });
     expect(mocks.store.updateProxyGroupAdvanced).toHaveBeenCalledWith("auto", { sourceIds: ["source-a"] });
+  });
+
+  it("builds proxy-group previews from effective nodes", () => {
+    mocks.store.nodes = [
+      {
+        name: "TAG-Notice",
+        _originName: "套餐到期提醒",
+        type: "ss",
+        server: "notice.example.com",
+        port: 8388,
+        cipher: "aes-128-gcm",
+        password: "secret",
+      },
+      {
+        name: "US",
+        type: "ss",
+        server: "us.example.com",
+        port: 8388,
+        cipher: "aes-128-gcm",
+        password: "secret",
+      },
+    ];
+    mocks.store.nodeNameFilter = {
+      enabled: true,
+      excludeRegexes: ["套餐到期"],
+    };
+
+    renderCategories({ 0: new Set(["core"]) });
+
+    expect(vi.mocked(generateProxyGroups)).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        nodes: [expect.objectContaining({ name: "US" })],
+      }),
+    );
   });
 
   it("renders custom category and disabled non-core module branches", async () => {

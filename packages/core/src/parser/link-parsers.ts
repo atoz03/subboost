@@ -11,12 +11,13 @@ import { parseVMess } from "./protocols/vmess";
 import { parseWireGuard } from "./protocols/wireguard";
 import { parseSnell } from "./protocols/snell";
 import { parseNetch } from "./protocols/netch";
+import { parseMierus } from "./protocols/mierus";
 import type { ParsedNode } from "@subboost/core/types/node";
 
 interface LinkParserDefinition {
   name: string;
   test: (link: string) => boolean;
-  parse: (link: string) => ParsedNode | null;
+  parse: (link: string) => ParsedNode | ParsedNode[] | null;
 }
 
 export function normalizeNodeLinkScheme(input: string): string {
@@ -89,6 +90,11 @@ const LINK_PARSERS: LinkParserDefinition[] = [
     parse: (link) => parseTuic(link),
   },
   {
+    name: "mierus",
+    test: (link) => link.startsWith("mierus://"),
+    parse: (link) => parseMierus(link),
+  },
+  {
     name: "wireguard",
     test: (link) => link.startsWith("wireguard://") || link.startsWith("wg://"),
     parse: (link) => parseWireGuard(link),
@@ -130,11 +136,17 @@ const LINK_PARSERS: LinkParserDefinition[] = [
 ];
 
 export function parseNodeLinkByRegistry(link: string): ParsedNode | null {
+  return parseNodeLinksByRegistry(link)[0] ?? null;
+}
+
+export function parseNodeLinksByRegistry(link: string): ParsedNode[] {
   const normalizedLink = normalizeNodeLinkScheme(link.trim());
   for (const parser of LINK_PARSERS) {
     if (parser.test(normalizedLink)) {
-      return parser.parse(normalizedLink);
+      const parsed = parser.parse(normalizedLink);
+      if (!parsed) return [];
+      return Array.isArray(parsed) ? parsed : [parsed];
     }
   }
-  return null;
+  return [];
 }

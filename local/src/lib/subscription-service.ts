@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { generateClashYaml } from "@subboost/core/generator";
 import { migrateFilteredProxyGroupsConfig } from "@subboost/core/migrations/filtered-proxy-groups";
 import { buildGenerateOptionsFromConfig, getEffectiveTestOptions } from "@subboost/core/subscription/config-utils";
@@ -8,15 +8,16 @@ import type { ParsedNode } from "@subboost/core/types/node";
 import {
   buildManualRefreshFailureResponse,
   buildManualRefreshSuccessResponseBody,
+  createResetSubscriptionAutoUpdateState,
   normalizeSubscriptionConfigForPersistence,
   normalizeSubscriptionInfoForPersistence,
   normalizeSubscriptionName,
-  normalizeSubscriptionNodeList,
   normalizeSubscriptionUrlList,
   prepareRefreshCacheResult,
   refreshNodeSnapshot,
   serializeSubscriptionDetailData,
   serializeSubscriptionSummaryData,
+  validateSubscriptionNodeList,
   type SavedSource,
   type RefreshNodeSnapshotResult,
 } from "@subboost/server-core/subscription";
@@ -50,6 +51,10 @@ export type SubscriptionRow = {
     failureSourceState: string | null;
     lastFailedAt: Date | null;
     lastAttemptedAt: Date | null;
+    nodeQuotaFailureCount: number;
+    lastNodeQuotaExceededAt: Date | null;
+    lastNodeQuotaActual: number | null;
+    lastNodeQuotaLimit: number | null;
     disabledAt: Date | null;
     disabledReason: string | null;
     disabledPreviousInterval: number | null;
@@ -76,6 +81,10 @@ export type SubscriptionSummary = {
     externalFailureCount: number;
     lastFailedAt: string | null;
     lastAttemptedAt: string | null;
+    nodeQuotaFailureCount: number;
+    lastNodeQuotaExceededAt: string | null;
+    lastNodeQuotaActual: number | null;
+    lastNodeQuotaLimit: number | null;
     disabledAt: string | null;
     disabledReason: string | null;
     disabledPreviousInterval: number | null;
@@ -102,6 +111,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function validateLocalSubscriptionNodes(value: unknown): ParsedNode[] {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value) && value.length > MAX_NODES_PER_SUBSCRIPTION) {
+    throw new Error(`Node count cannot exceed ${MAX_NODES_PER_SUBSCRIPTION}.`);
+  }
+  return validateSubscriptionNodeList(value);
+}
+
 function buildLocalSubscriptionUrl(token: string): string {
   return `${getAppUrl()}/api/subscriptions/${token}/config.yaml`;
 }
@@ -110,19 +127,55 @@ function buildLocalSubscriptionConfig(
   body: Record<string, unknown>,
   existingConfig: Record<string, unknown> = {}
 ): Record<string, unknown> {
+  const migratedExistingConfig = migrateFilteredProxyGroupsConfig(existingConfig);
   const config = normalizeSubscriptionConfigForPersistence(
     {
       config: body.config,
       smartNodeMatchingEnabled: body.smartNodeMatchingEnabled,
     },
     {
-      existingConfig: migrateFilteredProxyGroupsConfig(existingConfig),
+      existingConfig: migratedExistingConfig,
       idFactory: randomUUID,
       splitUrlLines: true,
+      mergeExistingConfig: false,
       defaultSmartNodeMatchingEnabled: true,
     }
   );
+
+  // 旧版筛选分组迁移期间，旧客户端可能只提交它认识的配置字段。
+  // 保留迁移生成的分组，避免一次普通保存把已迁移的节点关系静默删除。
+  if (
+    isRecord(body.config) &&
+    !("customProxyGroups" in body.config) &&
+    Array.isArray(existingConfig.filteredProxyGroups) &&
+    Array.isArray(migratedExistingConfig.customProxyGroups)
+  ) {
+    const migratedGroups = migratedExistingConfig.customProxyGroups.filter(
+      (group) => isRecord(group) &&
+        typeof group.id === "string" &&
+        group.id.startsWith("migrated-filtered-")
+    );
+    if (migratedGroups.length > 0) config.customProxyGroups = migratedGroups;
+  }
   return migrateFilteredProxyGroupsConfig(config);
+}
+
+function assertNodeNameFilterKeepsOutput(
+  nodes: ParsedNode[],
+  config: Record<string, unknown>
+): void {
+  if (nodes.length === 0) return;
+  const options = buildGenerateOptionsFromConfig(config, { nodes });
+  const hasProxyProviders = Boolean(
+    options.proxyProviders && Object.keys(options.proxyProviders).length > 0
+  );
+  if (options.nodes.length === 0 && !hasProxyProviders) {
+    throw new Error("过滤后没有可用节点");
+  }
+}
+
+export function generateLocalSubscriptionToken(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 export function readSubscriptionSecrets(row: SubscriptionRow) {
@@ -178,10 +231,11 @@ export async function createSubscription(ownerId: string, body: unknown): Promis
   if (!name) throw new Error("Subscription name is required.");
 
   const urls = normalizeSubscriptionUrlList(body.urls);
-  const nodes = normalizeSubscriptionNodeList(body.nodes);
+  const nodes = validateLocalSubscriptionNodes(body.nodes);
   if (urls.length === 0 && nodes.length === 0) throw new Error("At least one URL or node is required.");
 
   const config = buildLocalSubscriptionConfig(body);
+  assertNodeNameFilterKeepsOutput(nodes, config);
   const autoUpdateInterval = normalizeLocalAutoUpdateIntervalSeconds(body.autoUpdateInterval);
   const subscriptionInfo = normalizeSubscriptionInfoForPersistence(body.subscriptionInfo) ?? {};
 
@@ -189,6 +243,7 @@ export async function createSubscription(ownerId: string, body: unknown): Promis
     data: {
       ownerId,
       name,
+      token: generateLocalSubscriptionToken(),
       encryptedUrls: encryptJson(urls),
       encryptedNodes: encryptJson(nodes),
       encryptedConfig: encryptJson(config),
@@ -211,16 +266,18 @@ export async function updateSubscription(ownerId: string, id: string, body: unkn
   const hasUrls = "urls" in body;
   const hasNodes = "nodes" in body;
   const hasConfig = "config" in body || "smartNodeMatchingEnabled" in body;
+  const nextNodes = hasNodes ? validateLocalSubscriptionNodes(body.nodes) : currentSecrets.nodes;
+  let nextConfig = currentSecrets.config;
 
   if (hasUrls) {
     data.encryptedUrls = encryptJson(normalizeSubscriptionUrlList(body.urls));
   }
   if (hasNodes) {
-    data.encryptedNodes = encryptJson(normalizeSubscriptionNodeList(body.nodes));
+    data.encryptedNodes = encryptJson(nextNodes);
   }
   if (hasConfig) {
-    const config = buildLocalSubscriptionConfig(body, currentSecrets.config);
-    data.encryptedConfig = encryptJson(config);
+    nextConfig = buildLocalSubscriptionConfig(body, currentSecrets.config);
+    data.encryptedConfig = encryptJson(nextConfig);
   }
   if ("subscriptionInfo" in body) {
     data.encryptedSubscriptionInfo = encryptJson(normalizeSubscriptionInfoForPersistence(body.subscriptionInfo) ?? {});
@@ -228,20 +285,32 @@ export async function updateSubscription(ownerId: string, id: string, body: unkn
 
   if (hasUrls || hasNodes || hasConfig) {
     const nextUrls = hasUrls ? normalizeSubscriptionUrlList(body.urls) : currentSecrets.urls;
-    const nextNodes = hasNodes ? normalizeSubscriptionNodeList(body.nodes) : currentSecrets.nodes;
     if (nextUrls.length === 0 && nextNodes.length === 0) {
       throw new Error("At least one URL or node is required.");
     }
+    assertNodeNameFilterKeepsOutput(nextNodes, nextConfig);
   }
 
+  let resetAutoUpdateState = false;
   if ("autoUpdateInterval" in body) {
-    data.autoUpdateInterval = normalizeLocalAutoUpdateIntervalSeconds(body.autoUpdateInterval);
+    const nextAutoUpdateInterval = normalizeLocalAutoUpdateIntervalSeconds(body.autoUpdateInterval);
+    data.autoUpdateInterval = nextAutoUpdateInterval;
+    resetAutoUpdateState = current.autoUpdateInterval === null && nextAutoUpdateInterval !== null;
   }
 
-  const row = await prisma.subscription.update({
-    where: { id: current.id },
-    data,
-    include: { autoUpdateState: true },
+  const row = await prisma.$transaction(async (tx) => {
+    if (resetAutoUpdateState) {
+      await tx.subscriptionAutoUpdateState.upsert({
+        where: { subscriptionId: current.id },
+        create: { subscriptionId: current.id },
+        update: createResetSubscriptionAutoUpdateState(),
+      });
+    }
+    return tx.subscription.update({
+      where: { id: current.id },
+      data,
+      include: { autoUpdateState: true },
+    });
   });
   return formatSubscription(row);
 }
@@ -298,34 +367,30 @@ export function buildSubscriptionCacheExpiry(from: Date): Date {
 
 async function persistRefreshSuccess(params: {
   subscriptionId: string;
+  expectedUpdatedAt: Date;
   snapshot: RefreshNodeSnapshotResult;
   config: Record<string, unknown>;
   cachedAt: Date;
-}) {
-  await prisma.$transaction(async (tx) => {
-    await tx.subscription.update({
-      where: { id: params.subscriptionId },
+}): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.subscription.updateMany({
+      where: { id: params.subscriptionId, updatedAt: params.expectedUpdatedAt },
       data: {
         encryptedNodes: encryptJson(params.snapshot.nodes),
         encryptedConfig: encryptJson({ ...params.config, sources: params.snapshot.savedSources }),
         encryptedSubscriptionInfo: encryptJson(params.snapshot.subscriptionInfo),
         lastUpdatedAt: params.cachedAt,
         cacheExpiresAt: buildSubscriptionCacheExpiry(params.cachedAt),
+        updatedAt: params.cachedAt,
       },
     });
+    if (updated.count !== 1) return false;
     await tx.subscriptionAutoUpdateState.upsert({
       where: { subscriptionId: params.subscriptionId },
       create: { subscriptionId: params.subscriptionId },
-      update: {
-        externalFailureCount: 0,
-        failureSourceState: null,
-        lastFailedAt: null,
-        lastAttemptedAt: null,
-        disabledAt: null,
-        disabledReason: null,
-        disabledPreviousInterval: null,
-      },
+      update: createResetSubscriptionAutoUpdateState(),
     });
+    return true;
   });
 }
 
@@ -357,7 +422,22 @@ export async function refreshSubscription(ownerId: string, id: string) {
   }
 
   const cachedAt = new Date();
-  await persistRefreshSuccess({ subscriptionId: row.id, snapshot, config: secrets.config, cachedAt });
+  const persisted = await persistRefreshSuccess({
+    subscriptionId: row.id,
+    expectedUpdatedAt: row.updatedAt,
+    snapshot,
+    config: secrets.config,
+    cachedAt,
+  });
+  if (!persisted) {
+    return {
+      ok: false as const,
+      response: {
+        body: { error: "Subscription changed while refresh was in progress.", code: "SUBSCRIPTION_CHANGED" },
+        status: 409,
+      },
+    };
+  }
   return {
     ok: true as const,
     body: buildManualRefreshSuccessResponseBody({

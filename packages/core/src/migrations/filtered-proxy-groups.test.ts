@@ -171,4 +171,80 @@ describe("filtered proxy group config migration", () => {
     expect(migrated).not.toHaveProperty("allRulesOrderEditingEnabled");
     expect(migrateFilteredProxyGroupsConfig(migrated)).toBe(migrated);
   });
+
+  it("contains malformed legacy entries and resolves duplicate identifiers deterministically", () => {
+    const migrated = migrateFilteredProxyGroupsConfig({
+      customProxyGroups: [
+        null,
+        {
+          id: "legacy",
+          name: "Legacy",
+          rules: [
+            null,
+            { id: "", url: "" },
+            { id: "remote", name: "", url: "https://rules.example/remote.mrs", noResolve: true },
+          ],
+        },
+        { id: "migrated-filtered-reused", name: "" },
+      ],
+      filteredProxyGroups: [
+        null,
+        { id: "", name: "Missing" },
+        { id: "missing-name", name: "" },
+        { id: "duplicate", name: "Duplicate" },
+        { id: "duplicate", name: "Duplicate" },
+        { id: "duplicate", name: "Duplicate" },
+        { id: "reused", name: "Original" },
+      ],
+      customRuleSets: [null, { id: "remote", name: "Existing", path: "geosite/existing.mrs" }],
+      moduleRuleOverrides: {
+        "": [],
+        malformed: "not-an-array",
+        unknown: [
+          null,
+          { id: "", path: "" },
+          { id: "invalid", path: "relative.txt" },
+          { id: "remote", name: "", path: "https://rules.example/remote.mrs", noResolve: true },
+        ],
+        ai: [{ id: "openai", path: "geosite/openai.mrs" }],
+        invalidTarget: [{ id: "move", path: "geoip/private.mrs" }],
+      },
+      moduleRuleExclusions: {
+        "": [],
+        malformed: "not-an-array",
+        ai: ["", "no-override", "move", "already-edited"],
+      },
+      builtinRuleEdits: {
+        "module:ai:already-edited": { target: "Duplicate" },
+        "module:ai:invalid": null,
+        "module:ai:no-target": {},
+      },
+      customRules: [null, { value: "untargeted" }, { target: "Duplicate" }],
+      dialerProxyGroups: [
+        null,
+        {},
+        { relayNodes: "invalid" },
+        { relayNodes: [1, "Duplicate", "Unknown"] },
+      ],
+      proxyGroupOrder: [1, "module:auto", "filtered:missing", "filtered:duplicate"],
+      proxyGroupNameOverrides: null,
+      ruleOrder: [1, "unmapped"],
+    } as any);
+
+    expect(migrated.customProxyGroups).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "migrated-filtered-duplicate", name: "Duplicate" }),
+      expect.objectContaining({ id: "migrated-filtered-duplicate-2", name: "Duplicate (2)" }),
+      expect.objectContaining({ id: "migrated-filtered-duplicate-3", name: "Duplicate (3)" }),
+    ]));
+    expect(migrated.customRuleSets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "remote-2", target: "Legacy", noResolve: true }),
+      expect.objectContaining({ id: "remote-3", target: "unknown", noResolve: true }),
+    ]));
+    expect(migrated.builtinRuleEdits).toMatchObject({
+      "module:ai:no-override": { enabled: false },
+      "module:ai:move": { enabled: false },
+    });
+    expect(migrated.proxyGroupOrder).toEqual([1, "module:auto", "filtered:missing", "custom:migrated-filtered-duplicate-3"]);
+    expect(migrated.ruleOrder).toEqual([1, "unmapped"]);
+  });
 });

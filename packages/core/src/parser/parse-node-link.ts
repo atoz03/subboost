@@ -1,4 +1,4 @@
-import { parseNodeLinkByRegistry, normalizeNodeLinkScheme } from "./link-parsers";
+import { parseNodeLinksByRegistry, normalizeNodeLinkScheme } from "./link-parsers";
 import { canonicalizeParsedNode } from "./canonical-fields";
 import type { ParsedNode } from "@subboost/core/types/node";
 
@@ -16,12 +16,17 @@ export function isNakedProxyFormat(input: string): boolean {
  * 解析单个节点链接
  */
 export function parseNodeLink(link: string): ParsedNode | null {
+  return parseNodeLinks(link)[0] ?? null;
+}
+
+/** 解析单条分享链接；可表示多个绑定的协议会返回多个节点。 */
+export function parseNodeLinks(link: string): ParsedNode[] {
   const trimmedLink = link.trim();
-  if (!trimmedLink) return null;
+  if (!trimmedLink) return [];
 
   const normalizedLink = normalizeNodeLinkScheme(trimmedLink);
-  const parsed = parseNodeLinkByRegistry(normalizedLink);
-  if (parsed) return canonicalizeParsedNode(parsed);
+  const parsed = parseNodeLinksByRegistry(normalizedLink);
+  if (parsed.length > 0) return parsed.map((node) => canonicalizeParsedNode(node));
 
   if (isNakedProxyFormat(normalizedLink)) {
     throw new Error("无法识别的代理格式，请添加协议前缀 (如 socks5://, http://)");
@@ -32,5 +37,5 @@ export function parseNodeLink(link: string): ParsedNode | null {
     throw new Error(`不支持的协议: ${schemeMatch[1].toLowerCase()}`);
   }
 
-  return null;
+  return [];
 }

@@ -149,4 +149,61 @@ describe("user routes", () => {
       body: { error: "CSRF validation failed.", code: "FORBIDDEN" },
     });
   });
+
+  it("handles missing users, malformed bodies, conflicts, and service failures", async () => {
+    vi.mocked(listLocalUsers).mockResolvedValueOnce([]);
+    await expect(readJson(await meRoute.GET())).resolves.toEqual({
+      status: 404,
+      body: { error: "User not found.", code: "NOT_FOUND" },
+    });
+
+    const malformedCreate = new Request("http://local.test/api/users", {
+      method: "POST",
+      body: "{",
+    });
+    await expect(readJson(await usersRoute.POST(malformedCreate))).resolves.toMatchObject({
+      status: 400,
+      body: { code: "BAD_REQUEST" },
+    });
+
+    vi.mocked(createLocalUser).mockRejectedValueOnce(new Error("Unique constraint failed"));
+    await expect(readJson(await usersRoute.POST(jsonRequest(
+      "http://local.test/api/users",
+      "POST",
+      { username: "bob" },
+    )))).resolves.toEqual({
+      status: 409,
+      body: { error: "Unique constraint failed", code: "CONFLICT" },
+    });
+
+    vi.mocked(createLocalUser).mockRejectedValueOnce("unknown");
+    await expect(readJson(await usersRoute.POST(jsonRequest(
+      "http://local.test/api/users",
+      "POST",
+      { username: "bob" },
+    )))).resolves.toEqual({
+      status: 400,
+      body: { error: "Unable to create user.", code: "BAD_REQUEST" },
+    });
+
+    vi.mocked(updateLocalUserAccount).mockRejectedValueOnce(new Error("Unique constraint failed"));
+    await expect(readJson(await meRoute.PUT(jsonRequest(
+      "http://local.test/api/users/me",
+      "PUT",
+      { username: "bob" },
+    )))).resolves.toEqual({
+      status: 409,
+      body: { error: "Unique constraint failed", code: "CONFLICT" },
+    });
+
+    vi.mocked(updateLocalUserAccount).mockRejectedValueOnce("unknown");
+    await expect(readJson(await meRoute.PUT(jsonRequest(
+      "http://local.test/api/users/me",
+      "PUT",
+      { username: "bob" },
+    )))).resolves.toEqual({
+      status: 400,
+      body: { error: "Unable to update user.", code: "BAD_REQUEST" },
+    });
+  });
 });

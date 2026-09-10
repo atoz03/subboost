@@ -116,6 +116,7 @@ function resetStoreState(overrides: Record<string, unknown> = {}) {
     proxyGroupAdvanced: {},
     proxyGroupOrder: [],
     ruleOrder: [],
+    nodeNameFilter: { enabled: false, excludeRegexes: [] },
     ...overrides,
   };
   return { reset, generateConfig };
@@ -210,8 +211,11 @@ describe("useEditingSubscriptionLoader", () => {
               template: "full",
               enabledGroups: ["select", "auto", "ai", "youtube"],
               hiddenProxyGroups: ["youtube"],
-              customRules: [{ type: "DOMAIN", value: "example.com", target: "🤖 AI 服务" }],
-              customProxyGroups: [{ id: "custom-1", name: "Custom", emoji: "", groupType: "select" }],
+              customRules: [
+                { id: "disabled-target", type: "DOMAIN", value: "disabled.example.com", target: { kind: "custom", id: "custom-1" } },
+                { id: "active-target", type: "DOMAIN", value: "example.com", target: "DIRECT" },
+              ],
+              customProxyGroups: [{ id: "custom-1", name: "Custom", emoji: "", groupType: "select", enabled: false }],
               customRuleSets: [
                 {
                   id: "custom-ai",
@@ -225,6 +229,7 @@ describe("useEditingSubscriptionLoader", () => {
               moduleRuleEditWarningAccepted: true,
               dialerProxyGroups: [{ id: "dialer-1", name: "Relay", relayNodes: ["Remote"], targetNodes: [] }],
               proxyGroupNameOverrides: { ai: "Labs" },
+              ruleOrder: ["custom-rule:disabled-target", "custom-rule:active-target"],
               proxyGroupOrder: ["module:ai", "module:ai", ""],
               listenerPorts: { Remote: 41000, Deleted: 41001 },
               appliedTemplateId: "template-1",
@@ -235,6 +240,10 @@ describe("useEditingSubscriptionLoader", () => {
               cnIpNoResolve: false,
               experimentalCnUseCnRuleSet: true,
               smartNodeMatchingEnabled: false,
+              nodeNameFilter: {
+                enabled: true,
+                excludeRegexes: ["^Remote$"],
+              },
             },
           },
         })
@@ -267,8 +276,9 @@ describe("useEditingSubscriptionLoader", () => {
       enabledProxyGroups: ["select", "auto", "ai"],
       hiddenProxyGroups: ["youtube"],
       customProxyGroups: [
-        { id: "custom-1", name: "Custom", emoji: "", groupType: "select", advanced: {} },
+        { id: "custom-1", name: "Custom", emoji: "", groupType: "select", enabled: false, advanced: {} },
       ],
+      ruleOrder: ["custom-rule:active-target", "custom-rule-set:custom-ai"],
       proxyGroupAdvancedModeEnabled: true,
       customRuleSets: [
         {
@@ -285,6 +295,10 @@ describe("useEditingSubscriptionLoader", () => {
       proxyGroupOrder: ["module:ai"],
       listenerPorts: { Remote: 41000 },
       appliedTemplateId: "template-1",
+      nodeNameFilter: {
+        enabled: true,
+        excludeRegexes: ["^Remote$"],
+      },
       dnsYaml: "dns: {}",
       ruleProviderBaseUrl: "https://rules.example.com",
       testUrl: "https://test.example.com",
@@ -396,6 +410,10 @@ describe("useEditingSubscriptionLoader", () => {
         smartNodeMatchingEnabled: true,
       })
     );
+    expect(mocks.bag.storeState.nodeNameFilter).toEqual({
+      enabled: false,
+      excludeRegexes: [],
+    });
   });
 
   it("hydrates single URL sources from the saved subscription info snapshot", async () => {
@@ -520,6 +538,14 @@ describe("useEditingSubscriptionLoader", () => {
             config: {
               deletedNodeNames: ["Gone"],
               listenerPorts: { Active: 41000, Gone: 41001, Bad: "x", OutOfRange: 70000 },
+              groupListeners: [
+                { id: "gl-1", target: { kind: "module", id: "auto" }, port: 7891 },
+                { id: "gl-2", target: { kind: "custom", id: "c1" }, port: 7892, enabled: false, allowLan: true },
+                // 同目标重复与非法条目在恢复时丢弃
+                { id: "gl-dup", target: { kind: "module", id: "auto" }, port: 7899 },
+                { id: "gl-bad", target: { kind: "node", id: "n1" }, port: 7893 },
+                { id: "gl-bad-port", target: { kind: "dialer", id: "d1" }, port: 70000 },
+              ],
             },
           },
         })
@@ -551,6 +577,10 @@ describe("useEditingSubscriptionLoader", () => {
     ]);
     expect(mocks.bag.storeState.deletedNodes).toEqual([{ originName: "Gone", name: "Gone" }]);
     expect(mocks.bag.storeState.listenerPorts).toEqual({ Active: 41000 });
+    expect(mocks.bag.storeState.groupListeners).toEqual([
+      { id: "gl-1", target: { kind: "module", id: "auto" }, port: 7891 },
+      { id: "gl-2", target: { kind: "custom", id: "c1" }, port: 7892, enabled: false, allowLan: true },
+    ]);
     expect(options.setEditingSubscription).toHaveBeenCalledWith(
       expect.objectContaining({ autoUpdateInterval: 30, smartNodeMatchingEnabled: true })
     );

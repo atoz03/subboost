@@ -8,7 +8,7 @@ import { parseClashYaml } from "./clash-yaml";
 import { parseSubscriptionContentByRegistry } from "./content-parsers";
 import { normalizeParseResult } from "./normalize";
 import { preprocessSubscriptionContent } from "./preprocess";
-import { parseNodeLink } from "./parse-node-link";
+import { parseNodeLink, parseNodeLinks } from "./parse-node-link";
 import type { ParseResult } from "@subboost/core/types/node";
 
 function finalizeParseResult(result: ParseResult, priorErrors: string[] = []): ParseResult {
@@ -42,6 +42,7 @@ export function parseSubscription(content: string): ParseResult {
 
 export { parseBase64, parseClashYaml };
 export { parseNodeLink };
+export { parseNodeLinks };
 export * from "./protocols/ss";
 export * from "./protocols/ssr";
 export * from "./protocols/vmess";
@@ -54,4 +55,4 @@ export * from "./protocols/tuic";
 export * from "./protocols/simple-proxy";
 export * from "./protocols/wireguard";
 export * from "./protocols/snell";
-
+export * from "./protocols/mierus";

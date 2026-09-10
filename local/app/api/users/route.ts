@@ -1,5 +1,5 @@
 import { withCurrentAdmin, withCurrentAdminAndCsrf } from "@local/lib/api-auth";
-import { apiError, json, readJsonBody } from "@local/lib/http";
+import { apiError, json, jsonBodyError, LOCAL_JSON_BODY_LIMITS, readJsonBody } from "@local/lib/http";
 import { createLocalUser, listLocalUsers } from "@local/lib/local-user-service";
 
 export async function GET() {
@@ -8,11 +8,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   return withCurrentAdminAndCsrf(request, async () => {
-    const body = await readJsonBody(request);
-    if (!body) return apiError("Invalid JSON body.", "BAD_REQUEST", 400);
+    const parsedBody = await readJsonBody(request, LOCAL_JSON_BODY_LIMITS.small);
+    if (!parsedBody.ok) return jsonBodyError(parsedBody);
 
     try {
-      const user = await createLocalUser(body);
+      const user = await createLocalUser(parsedBody.value);
       return json({ user }, 201);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create user.";

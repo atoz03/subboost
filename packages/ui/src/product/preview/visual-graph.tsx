@@ -13,6 +13,7 @@ import {
 import { getModuleRuleOrderKey } from "@subboost/core/generator/module-rules";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
 import { resolveProxyGroupTargetName } from "@subboost/core/proxy-group-targets";
+import { resolveNodeNameFilter } from "@subboost/core/subscription/node-name-filter";
 import { collectCustomRoutingRuleSets } from "@subboost/core/rules/custom-routing-rule-sets";
 import { CustomRulesPreview } from "./visual-graph/custom-rules-preview";
 import { getDialerEmojiFromName } from "./visual-graph/emoji";
@@ -28,6 +29,7 @@ import {
 export function VisualGraph() {
   const {
     nodes,
+    nodeNameFilter,
     enabledProxyGroups,
     dialerProxyGroups,
     customRules,
@@ -44,6 +46,7 @@ export function VisualGraph() {
   } = useConfigStore(
     useShallow((state) => ({
       nodes: state.nodes,
+      nodeNameFilter: state.nodeNameFilter,
       enabledProxyGroups: state.enabledProxyGroups,
       dialerProxyGroups: state.dialerProxyGroups ?? [],
       customRules: state.customRules ?? [],
@@ -58,6 +61,18 @@ export function VisualGraph() {
       ruleProviderBaseUrl: state.ruleProviderBaseUrl,
       setProxyGroupOrder: state.setProxyGroupOrder,
     })),
+  );
+  const effectiveNodes = React.useMemo(
+    () => resolveNodeNameFilter(nodes, nodeNameFilter).effectiveNodes,
+    [nodeNameFilter, nodes],
+  );
+  const rawNodeNameSet = React.useMemo(
+    () => new Set(nodes.map((node) => node.name)),
+    [nodes],
+  );
+  const effectiveNodeNameSet = React.useMemo(
+    () => new Set(effectiveNodes.map((node) => node.name)),
+    [effectiveNodes],
   );
 
   const enabledDialerProxyGroups = React.useMemo(
@@ -110,13 +125,20 @@ export function VisualGraph() {
     },
     [proxyGroupNameOverrides],
   );
+  const moduleNames = React.useMemo(
+    () =>
+      Object.fromEntries(
+        PROXY_GROUP_MODULES.map((module) => [module.id, resolveModuleName(module)]),
+      ),
+    [resolveModuleName],
+  );
 
   // 节点名称列表
   // 生成当前配置下的代理组（用于显示“默认选中项”）
   const generatedProxyGroups = React.useMemo(() => {
-    if (nodes.length === 0) return [];
+    if (effectiveNodes.length === 0) return [];
     return generateProxyGroups({
-      nodes,
+      nodes: effectiveNodes,
       enabledModules: enabledProxyGroups,
       ruleProviderBaseUrl,
       testUrl,
@@ -128,7 +150,7 @@ export function VisualGraph() {
       proxyGroupNameOverrides,
     });
   }, [
-    nodes,
+    effectiveNodes,
     enabledProxyGroups,
     ruleProviderBaseUrl,
     testUrl,
@@ -154,10 +176,6 @@ export function VisualGraph() {
       if (!g || typeof g.name !== "string" || !g.name.trim()) continue;
       customByName.set(g.name.trim(), g);
     }
-    const moduleNames = Object.fromEntries(
-      PROXY_GROUP_MODULES.map((module) => [module.id, resolveModuleName(module)]),
-    );
-
     const base = generatedProxyGroups.map((g) => {
       const groupName = typeof g.name === "string" ? g.name.trim() : "";
       const mod = groupName ? moduleByName.get(groupName) : undefined;
@@ -259,8 +277,15 @@ export function VisualGraph() {
             category: "dialer",
             rules: [],
             dialer: {
-              relayNodes: Array.isArray(g.relayNodes) ? g.relayNodes : [],
-              targetNodes: Array.isArray(g.targetNodes) ? g.targetNodes : [],
+              relayNodes: Array.isArray(g.relayNodes)
+                ? g.relayNodes.filter(
+                    (name) =>
+                      !rawNodeNameSet.has(name) || effectiveNodeNameSet.has(name),
+                  )
+                : [],
+              targetNodes: Array.isArray(g.targetNodes)
+                ? g.targetNodes.filter((name) => effectiveNodeNameSet.has(name))
+                : [],
               type: g.type,
             },
           }));
@@ -314,11 +339,14 @@ export function VisualGraph() {
   }, [
     activeCustomProxyGroups,
     enabledDialerProxyGroups,
+    effectiveNodeNameSet,
+    rawNodeNameSet,
     generatedProxyGroups,
     customRuleSets,
     builtinRuleEdits,
     proxyGroupAdvanced,
     proxyGroupOrder,
+    moduleNames,
     resolveModuleName,
   ]);
 
@@ -382,7 +410,7 @@ export function VisualGraph() {
       .sort((a, b) => a.order - b.order);
   }, [enabledDialerProxyGroups.length, displayGroups]);
 
-  if (nodes.length === 0) {
+  if (effectiveNodes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-white/50">
         <Network className="h-12 w-12 mb-3 opacity-50" />
@@ -410,7 +438,7 @@ export function VisualGraph() {
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-white/5 p-2">
           <div className="text-lg font-bold text-primary-500">
-            {nodes.length}
+            {effectiveNodes.length}
           </div>
           <div className="text-[10px] text-white/50">节点</div>
         </div>
@@ -449,12 +477,12 @@ export function VisualGraph() {
             节点列表
           </span>
           <span className="text-[10px] text-white/50">
-            共 {nodes.length} 个
+            共 {effectiveNodes.length} 个
           </span>
         </div>
 
         <div className="max-h-48 overflow-y-auto space-y-1 rounded-lg bg-white/5 p-2">
-          {nodes.slice(0, 50).map((node, idx) => (
+          {effectiveNodes.slice(0, 50).map((node, idx) => (
             <div
               key={node.name + idx}
               className="flex items-center gap-2 rounded-md px-2 py-1 text-[10px] hover:bg-white/5"
@@ -486,9 +514,9 @@ export function VisualGraph() {
               <ProtocolBadge type={node.type} className="flex-shrink-0" />
             </div>
           ))}
-          {nodes.length > 50 && (
+          {effectiveNodes.length > 50 && (
             <div className="text-center text-[10px] text-white/50 py-1">
-              ... 还有 {nodes.length - 50} 个节点
+              ... 还有 {effectiveNodes.length - 50} 个节点
             </div>
           )}
         </div>
@@ -497,6 +525,8 @@ export function VisualGraph() {
       <CustomRulesPreview
         customRules={customRules}
         ruleSets={customRoutingRuleSets}
+        moduleNames={moduleNames}
+        customProxyGroups={activeCustomProxyGroups}
       />
     </div>
   );

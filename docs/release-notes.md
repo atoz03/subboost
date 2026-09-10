@@ -1,37 +1,37 @@
-# SubBoost v2.6.3
+# SubBoost v2.8.1
 
 ## 中文
 
 ### 更新重点
 
-SubBoost v2.6.3 修复旧配置已迁移但旧字段仍残留时生成重复代理组的问题。
+- 同步上游 v2.7.0 至 v2.8.1：加入持久化节点正则过滤、代理组独立监听端口、解析与生成兼容修复，以及依赖和自托管边界加固。
+- 保留本分支的多用户账号、完整配置导入导出、外部 PostgreSQL 部署方式和旧代理组配置迁移。
+- 支持导入官方 `mierus://` 简单分享链接，并转换为 Mihomo `mieru` 节点；一个链接包含多个端口绑定时会生成多个节点。
 
-### 主要变化
+### 修复
 
-- 对已有同 ID `migrated-filtered-*` 的代理组复用现有配置，不再追加同名的 `(2)` 副本。
-- 保存订阅时会清理旧 `filteredProxyGroups`，防止当前字段与旧字段再次共存。
-- 保留旧代理组的筛选条件、组类型、启用状态、顺序和规则目标。
+- 自部署更新会先验证候选镜像和数据库备份，并在同一次更新中切换到新镜像；失败时保留可恢复的旧配置和备份。
+- 已迁移但仍残留旧字段的配置不会再生成重复代理组，保存后会清理旧 `filteredProxyGroups`。
 
 ### 升级说明
 
-- 升级前请备份 `.env` 和数据库；自部署升级过程会先保留可恢复的 compose、环境和数据库备份。
-- 不需要手动修改数据库。加载和生成会立即去重；下一次保存订阅会清理残留旧字段。
-- 数据库 schema 保持兼容，不需要额外迁移步骤。
+- 新增 `CRON_SECRET`、`LOCAL_SETUP_TOKEN` 和可选的 `TRUST_PROXY_HEADERS`；安装器会自动生成前两个密钥。
+- 继续使用外部 PostgreSQL。升级前请备份 `.env` 和数据库；Prisma 会在启动时应用新增迁移。
 
 ## English
 
 ### Highlights
 
-SubBoost v2.6.3 fixes duplicate proxy groups when a legacy configuration was already migrated but retained its old fields.
+- Synced upstream v2.7.0 through v2.8.1, including persistent node-name filters, per-group listener ports, parser and generator compatibility fixes, dependency updates, and self-hosting hardening.
+- Preserved this branch's multi-user accounts, complete configuration transfer, external PostgreSQL deployment, and legacy proxy-group migration.
+- Added official `mierus://` simple share-link imports. Links with multiple port bindings expand into multiple Mihomo `mieru` nodes.
 
-### Main Changes
+### Fixes
 
-- Existing `migrated-filtered-*` proxy groups are reused instead of appending a same-name `(2)` duplicate.
-- Saving a subscription removes legacy `filteredProxyGroups` so old and current fields cannot coexist again.
-- Legacy filters, group type, enabled state, ordering, and rule targets remain preserved.
+- Self-hosted updates verify the candidate image and database backup before activation, switch to the new image in the same update, and retain recoverable metadata on failure.
+- Migrated configurations with stale legacy fields no longer produce duplicate proxy groups; saving removes `filteredProxyGroups`.
 
 ### Upgrade Notes
 
-- Back up `.env` and the database before upgrading; the self-hosted upgrade flow retains recoverable compose, environment, and database backups.
-- No manual database changes are required. Loading and generation deduplicate immediately; the next subscription save removes remaining legacy fields.
-- The database schema remains compatible and requires no additional migration step.
+- `CRON_SECRET`, `LOCAL_SETUP_TOKEN`, and optional `TRUST_PROXY_HEADERS` are now supported; the installer generates the first two secrets.
+- External PostgreSQL remains the deployment model. Back up `.env` and the database before upgrading; Prisma applies the new migrations at startup.

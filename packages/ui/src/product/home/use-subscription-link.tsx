@@ -27,6 +27,7 @@ import {
   type AutoUpdateIntervalPolicy,
   type AutoUpdateIntervalPolicyOverride,
 } from "@subboost/core/subscription/auto-update-interval";
+import type { NodeNameFilterConfig } from "@subboost/core/subscription/node-name-filter";
 import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/url-input";
 import { DEFAULT_NODE_NAME_TEMPLATE } from "@subboost/core/node-name-template";
 import { formatDateInBeijing } from "@subboost/core/time/beijing";
@@ -35,6 +36,7 @@ import {
   type ProductInteractionResult,
   type ProductMode,
 } from "@subboost/ui/product/interactions";
+import { copyTextToClipboard } from "@subboost/ui/lib/clipboard";
 
 type EditingSubscription = {
   id: string;
@@ -296,6 +298,7 @@ export function useSubscriptionLink({
     setIsCreatingSubscription(true);
 
     try {
+      const nodeNameFilter: NodeNameFilterConfig = useConfigStore.getState().nodeNameFilter;
       const subscriptionInfo: SubscriptionUserInfo = {};
       const sourceSubscriptionInfoById = new Map<string, SubscriptionUserInfo>();
       for (const source of storeSources) {
@@ -324,6 +327,7 @@ export function useSubscriptionLink({
             template,
             appliedTemplateId,
             smartNodeMatchingEnabled,
+            nodeNameFilter,
             // 用于“我的订阅 → 编辑”恢复输入源（保留 YAML/节点链接/多个 URL 的顺序）
             sources: storeSources
             .filter((s) => typeof s?.content === "string" && s.content.trim())
@@ -388,6 +392,7 @@ export function useSubscriptionLink({
             proxyGroupNameOverrides,
             proxyGroupOrder: useConfigStore.getState().proxyGroupOrder,
             listenerPorts,
+            groupListeners: useConfigStore.getState().groupListeners,
             dnsYaml,
             ruleProviderBaseUrl,
             testUrl,
@@ -495,17 +500,18 @@ export function useSubscriptionLink({
   const handleCopyUrl = React.useCallback(async () => {
     if (!subscriptionUrl) return;
 
-    try {
-      await navigator.clipboard.writeText(subscriptionUrl);
-      setCopied(true);
-      interactions.subscriptionLinkCopied?.({
-        mode: subscriptionFlowMode,
-        flow: isEditingExistingSubscription ? "update" : "create",
-      });
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error("Copy error:", error);
+    const copied = await copyTextToClipboard(subscriptionUrl);
+    if (!copied) {
+      toast({ title: "复制失败，请手动复制订阅链接", variant: "destructive" });
+      return;
     }
+
+    setCopied(true);
+    interactions.subscriptionLinkCopied?.({
+      mode: subscriptionFlowMode,
+      flow: isEditingExistingSubscription ? "update" : "create",
+    });
+    setTimeout(() => setCopied(false), 2000);
   }, [interactions, isEditingExistingSubscription, subscriptionFlowMode, subscriptionUrl]);
 
   return {

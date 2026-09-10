@@ -72,14 +72,17 @@ export async function createInitialAdmin(body: unknown) {
   if (passwordError) throw new Error(passwordError);
   if (password !== passwordConfirm) throw new Error("两次输入的密码不一致。");
 
-  const existingCount = await prisma.localAdmin.count();
-  if (existingCount > 0) throw new Error("系统已初始化，请直接登录。");
-
   const passwordHash = await bcrypt.hash(password, 12);
-  return prisma.localAdmin.create({
-    data: { username, passwordHash, lastLoginAt: new Date() },
-    select: { id: true, username: true },
+  const user = await prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${1_397_704_283}) IS NULL AS "locked"`;
+    if (await transaction.localAdmin.count()) return null;
+    return transaction.localAdmin.create({
+      data: { username, passwordHash, lastLoginAt: new Date() },
+      select: { id: true, username: true },
+    });
   });
+  if (!user) throw new Error("系统已初始化，请直接登录。");
+  return user;
 }
 
 export async function verifyLocalUser(usernameInput: unknown, passwordInput: unknown) {

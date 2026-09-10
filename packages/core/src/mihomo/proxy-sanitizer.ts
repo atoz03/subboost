@@ -35,6 +35,7 @@ const REQUIRED_STRING_FIELDS_BY_TYPE: Record<string, string[]> = {
   anytls: ["password"],
   hysteria2: ["password"],
   snell: ["psk"],
+  mieru: ["username", "password", "transport"],
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

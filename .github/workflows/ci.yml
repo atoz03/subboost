@@ -23,8 +23,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests
-        run: npm run test:unit
+      - name: Tests with coverage
+        run: npm run test:coverage
 
       - name: Local app check
         run: npm run check:local-app

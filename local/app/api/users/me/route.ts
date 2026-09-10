@@ -1,5 +1,5 @@
 import { withCurrentAdmin, withCurrentAdminAndCsrf } from "@local/lib/api-auth";
-import { apiError, json, readJsonBody } from "@local/lib/http";
+import { apiError, json, jsonBodyError, LOCAL_JSON_BODY_LIMITS, readJsonBody } from "@local/lib/http";
 import { listLocalUsers, updateLocalUserAccount } from "@local/lib/local-user-service";
 
 export async function GET() {
@@ -13,11 +13,11 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   return withCurrentAdminAndCsrf(request, async (admin) => {
-    const body = await readJsonBody(request);
-    if (!body) return apiError("Invalid JSON body.", "BAD_REQUEST", 400);
+    const parsedBody = await readJsonBody(request, LOCAL_JSON_BODY_LIMITS.small);
+    if (!parsedBody.ok) return jsonBodyError(parsedBody);
 
     try {
-      const user = await updateLocalUserAccount(admin.id, body);
+      const user = await updateLocalUserAccount(admin.id, parsedBody.value);
       return json({ user });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to update user.";
