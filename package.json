@@ -15,6 +15,7 @@
     "build": "npm --workspace @subboost/local run build",
     "pretest:unit": "npm run local:db:generate",
     "test:unit": "vitest run",
+    "pretest:coverage": "npm run local:db:generate",
     "test:coverage": "vitest run --config vitest.coverage.ts --coverage",
     "test:core": "vitest run --config vitest.core.config.ts",
     "lint": "eslint local packages --max-warnings=0 && npm run check:ui-consistency",

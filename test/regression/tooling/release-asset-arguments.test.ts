@@ -11,6 +11,9 @@ const releaseAssets = requireCjs("../../../scripts/selfhost-release-assets.cjs")
   main(argv?: string[], dependencies?: { root?: string }): void;
   parseArgs(argv: string[]): Record<string, unknown>;
 };
+const expectedDefaultImageRepository = process.env.GITHUB_REPOSITORY_OWNER
+  ? `ghcr.io/${process.env.GITHUB_REPOSITORY_OWNER}/subboost`
+  : "ghcr.io/subboost/subboost";
 
 const ENV_KEYS = [
   "SUBBOOST_RELEASE_ASSET_BASE_URL",
@@ -117,8 +120,8 @@ describe("selfhost release asset argument regressions", () => {
       expect(releaseAssets.buildManifest(root, args)).toMatchObject({
         buildSha: "abcdef1234567890",
         buildVersion: "2.7.0+sha.abcdef123456",
-        image: "ghcr.io/subboost/subboost:v2.7.0",
-        imageTag: "ghcr.io/subboost/subboost:v2.7.0",
+        image: `${expectedDefaultImageRepository}:v2.7.0`,
+        imageTag: `${expectedDefaultImageRepository}:v2.7.0`,
         version: "2.7.0",
       });
     });
