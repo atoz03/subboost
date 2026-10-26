@@ -37,7 +37,7 @@ const PROXY_FIELD_ORDER_PROTOCOL: Partial<Record<KnownNodeType, string[]>> = {
     "ip",
     "ipv6",
     "mtu",
-    "keepalive",
+    "persistent-keepalive",
     "reserved",
     "dns",
     "allowed-ips",
@@ -46,8 +46,10 @@ const PROXY_FIELD_ORDER_PROTOCOL: Partial<Record<KnownNodeType, string[]>> = {
   snell: ["psk", "version", "obfs-opts", "reuse"],
   direct: ["udp", "ip-version", "interface-name", "routing-mark"],
   dns: ["udp"],
+  reject: [],
   mieru: ["username", "password", "transport", "port-range", "multiplexing", "handshake-mode", "traffic-pattern"],
   masque: ["username", "password"],
+  trusttunnel: ["username", "password", "health-check", "quic", "congestion-controller", "max-connections", "min-streams", "max-streams"],
   sudoku: [
     "key",
     "aead-method",
@@ -134,10 +136,6 @@ function getOrderedProxyKeys(node: Record<string, unknown>): string[] {
 function canonicalizeProxy(node: Record<string, unknown>): Record<string, unknown> {
   const copy = sanitizeMihomoProxyNode(node);
   const type = typeof copy.type === "string" ? copy.type : "";
-  if (type === "mieru" && typeof copy["port-range"] === "string" && copy["port-range"].trim()) {
-    // Mihomo 要求 port 与 port-range 二选一；内部 port 仅用于统一节点身份和排序。
-    delete copy.port;
-  }
   if (copy.udp === undefined && UDP_SUPPORTED_TYPES.has(type as KnownNodeType)) {
     copy.udp = true;
   }

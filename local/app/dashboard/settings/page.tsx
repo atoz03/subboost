@@ -108,6 +108,8 @@ export default function SettingsPage() {
 
   const handleLogout = async () => {
     await logout();
+    // Clear the mounted authenticated page and its cached state after logout.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = "/login";
   };
 
@@ -197,7 +199,7 @@ export default function SettingsPage() {
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold mb-1">账户设置</h1>
-          <p className="text-white/50">管理当前账号、团队账号、订阅源安全和运行端点</p>
+          <p className="text-fg-50">管理当前账号、团队账号、订阅源安全和运行端点</p>
         </div>
       </div>
 
@@ -210,32 +212,32 @@ export default function SettingsPage() {
             <CardTitle className="text-base">当前账号</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3 rounded-lg bg-white/5 p-3 text-sm">
+            <div className="grid grid-cols-2 gap-3 rounded-lg bg-ink/5 p-3 text-sm">
               <div>
-                <p className="text-xs text-white/40">登录账号</p>
+                <p className="text-xs text-fg-40">登录账号</p>
                 <p className="mt-1 font-medium">{user?.username || "未登录"}</p>
               </div>
               <div>
-                <p className="text-xs text-white/40">已保存订阅</p>
+                <p className="text-xs text-fg-40">已保存订阅</p>
                 <p className="mt-1 font-medium">
                   {user ? `${user.subscriptionCount} / ${user.quota.maxSubscriptions}` : "-"}
                 </p>
               </div>
             </div>
             <div>
-              <p className="text-xs text-white/40 mb-1">用户名</p>
+              <p className="text-xs text-fg-40 mb-1">用户名</p>
               <Input value={profileUsername} onChange={(event) => setProfileUsername(event.target.value)} />
             </div>
             <div>
-              <p className="text-xs text-white/40 mb-1">当前密码</p>
+              <p className="text-xs text-fg-40 mb-1">当前密码</p>
               <Input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
             </div>
             <div>
-              <p className="text-xs text-white/40 mb-1">新密码</p>
+              <p className="text-xs text-fg-40 mb-1">新密码</p>
               <Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
             </div>
             <div>
-              <p className="text-xs text-white/40 mb-1">确认新密码</p>
+              <p className="text-xs text-fg-40 mb-1">确认新密码</p>
               <Input
                 type="password"
                 value={passwordConfirm}
@@ -307,14 +309,14 @@ export default function SettingsPage() {
             </div>
             <CardTitle className="text-base">运行端点</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-white/60">
+          <CardContent className="space-y-3 text-sm text-fg-60">
             <div>
-              <p className="text-xs text-white/40">存活检查</p>
-              <code className="mt-1 block rounded-md bg-white/5 px-3 py-2 text-white/70">/api/health/live</code>
+              <p className="text-xs text-fg-40">存活检查</p>
+              <code className="mt-1 block rounded-md bg-ink/5 px-3 py-2 text-fg-70">/api/health/live</code>
             </div>
             <div>
-              <p className="text-xs text-white/40">就绪检查</p>
-              <code className="mt-1 block rounded-md bg-white/5 px-3 py-2 text-white/70">/api/health/ready</code>
+              <p className="text-xs text-fg-40">就绪检查</p>
+              <code className="mt-1 block rounded-md bg-ink/5 px-3 py-2 text-fg-70">/api/health/ready</code>
             </div>
           </CardContent>
         </Card>
@@ -329,21 +331,21 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           {isLoadingUsers ? (
-            <p className="text-white/50">加载中...</p>
+            <p className="text-fg-50">加载中...</p>
           ) : users.length === 0 ? (
-            <p className="text-white/50">暂无账号</p>
+            <p className="text-fg-50">暂无账号</p>
           ) : (
             <div className="space-y-3">
               {users.map((item) => (
-                <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div key={item.id} className="rounded-xl border border-ink/10 bg-ink/5 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <div className="font-medium">{item.username}</div>
-                      <div className="text-xs text-white/45">
+                      <div className="text-xs text-fg-45">
                         创建于 {formatDate(item.createdAt)}，最近登录 {formatDate(item.lastLoginAt)}
                       </div>
                     </div>
-                    <div className="text-sm text-white/60">
+                    <div className="text-sm text-fg-60">
                       {item.subscriptionCount} 个订阅 / {item.templateCount} 个模板记录
                     </div>
                   </div>

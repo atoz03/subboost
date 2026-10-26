@@ -18,9 +18,7 @@ const MULTIPLEXING_LEVELS = new Set([
 const HANDSHAKE_MODES = new Set(["HANDSHAKE_STANDARD", "HANDSHAKE_NO_WAIT"]);
 const MAX_PORT_BINDINGS = 256;
 
-type PortBinding =
-  | { port: number; label: string }
-  | { port: number; portRange: string; label: string };
+type PortBinding = { port: number; label: string } | { portRange: string; label: string };
 
 function readSingletonParam(params: URLSearchParams, key: string, required = false): string | undefined {
   const values = params.getAll(key);
@@ -45,7 +43,7 @@ function parsePortBinding(value: string): PortBinding {
   if (start < 1 || end > 65535 || start > end) {
     throw new Error("Mieru 端口范围无效");
   }
-  return { port: start, portRange: `${start}-${end}`, label: `${start}-${end}` };
+  return { portRange: `${start}-${end}`, label: `${start}-${end}` };
 }
 
 function normalizeTrafficPattern(value: string | undefined): string | undefined {
@@ -106,13 +104,14 @@ export function parseMierus(uri: string): MieruNode[] {
       name: includeBindingInName ? `${baseName} [${transport} ${binding.label}]` : baseName,
       type: "mieru",
       server,
-      port: binding.port,
       username,
       password,
       transport,
       udp: true,
     };
+    // Mihomo 要求 port 与 port-range 二选一。
     if ("portRange" in binding) node["port-range"] = binding.portRange;
+    else node.port = binding.port;
     if (multiplexing) node.multiplexing = multiplexing;
     if (handshakeMode) node["handshake-mode"] = handshakeMode;
     if (trafficPattern) node["traffic-pattern"] = trafficPattern;

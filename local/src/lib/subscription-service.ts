@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { generateClashYaml } from "@subboost/core/generator";
 import { migrateFilteredProxyGroupsConfig } from "@subboost/core/migrations/filtered-proxy-groups";
+import { migrateLegacyMieruNodes } from "@subboost/core/migrations/legacy-mieru-endpoint";
 import { buildGenerateOptionsFromConfig, getEffectiveTestOptions } from "@subboost/core/subscription/config-utils";
 import { buildProxyProvidersFromConfig } from "@subboost/core/subscription/proxy-providers";
 import type { SubscriptionResponseInfo } from "@subboost/core/subscription/subscription-response-info";
@@ -116,7 +117,7 @@ function validateLocalSubscriptionNodes(value: unknown): ParsedNode[] {
   if (Array.isArray(value) && value.length > MAX_NODES_PER_SUBSCRIPTION) {
     throw new Error(`Node count cannot exceed ${MAX_NODES_PER_SUBSCRIPTION}.`);
   }
-  return validateSubscriptionNodeList(value);
+  return validateSubscriptionNodeList(migrateLegacyMieruNodes(value));
 }
 
 function buildLocalSubscriptionUrl(token: string): string {
@@ -181,7 +182,7 @@ export function generateLocalSubscriptionToken(): string {
 export function readSubscriptionSecrets(row: SubscriptionRow) {
   return {
     urls: decryptJson<string[]>(row.encryptedUrls, []),
-    nodes: decryptJson<ParsedNode[]>(row.encryptedNodes, []),
+    nodes: migrateLegacyMieruNodes(decryptJson<ParsedNode[]>(row.encryptedNodes, [])),
     config: decryptJsonObject(row.encryptedConfig),
     subscriptionInfo:
       normalizeSubscriptionInfoForPersistence(decryptJson<unknown>(row.encryptedSubscriptionInfo, {})) ?? {},
@@ -377,7 +378,7 @@ async function persistRefreshSuccess(params: {
       where: { id: params.subscriptionId, updatedAt: params.expectedUpdatedAt },
       data: {
         encryptedNodes: encryptJson(params.snapshot.nodes),
-        encryptedConfig: encryptJson({ ...params.config, sources: params.snapshot.savedSources }),
+        encryptedConfig: encryptJson(params.config),
         encryptedSubscriptionInfo: encryptJson(params.snapshot.subscriptionInfo),
         lastUpdatedAt: params.cachedAt,
         cacheExpiresAt: buildSubscriptionCacheExpiry(params.cachedAt),
@@ -426,7 +427,7 @@ export async function refreshSubscription(ownerId: string, id: string) {
     subscriptionId: row.id,
     expectedUpdatedAt: row.updatedAt,
     snapshot,
-    config: secrets.config,
+    config: refreshResult.refreshedConfig,
     cachedAt,
   });
   if (!persisted) {

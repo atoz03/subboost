@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import * as yamlParser from "js-yaml";
+import { generateClashYaml } from "@subboost/core/generator";
 import { configToYaml } from "@subboost/core/generator/yaml";
 import { parseSubscription } from "@subboost/core/parser";
 import type { ClashConfig } from "@subboost/core/types/config";
@@ -28,10 +30,10 @@ describe("Mieru simple share links", () => {
     });
     expect(nodes[1]).toMatchObject({
       name: "default [TCP 9998-9999]",
-      port: 9998,
       "port-range": "9998-9999",
       transport: "TCP",
     });
+    expect(nodes[1]).not.toHaveProperty("port");
     expect(nodes[2]).toMatchObject({ name: "default [UDP 6489]", port: 6489, transport: "UDP" });
     expect(nodes[3]).toMatchObject({ name: "default [UDP 4896]", port: 4896, transport: "UDP" });
     expect(nodes[0]).not.toHaveProperty("mtu");
@@ -71,6 +73,16 @@ describe("Mieru simple share links", () => {
     );
     expect(yaml).not.toContain("port: 2999, username");
     expect(yaml).toContain("port: 4000, username: user, password: password, transport: UDP");
+
+    // 完整生成链路会按端点规则过滤节点；范围绑定不能因同时携带 port 而被丢弃。
+    const generated = yamlParser.load(generateClashYaml({ nodes: result.nodes, userConfig: { dnsYaml: "" } })) as {
+      proxies: Record<string, unknown>[];
+    };
+    expect(generated.proxies).toEqual([
+      expect.objectContaining({ type: "mieru", "port-range": "2999-3001", transport: "TCP" }),
+      expect.objectContaining({ type: "mieru", port: 4000, transport: "UDP" }),
+    ]);
+    expect(generated.proxies[0]).not.toHaveProperty("port");
   });
 
   it("rejects malformed singleton parameters and unpaired bindings", () => {

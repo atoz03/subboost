@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import yamlParser from "js-yaml";
+import * as yamlParser from "js-yaml";
 import { collectDnsPolicyEntries, configToYaml } from "./yaml";
 import type { ClashConfig } from "@subboost/core/types/config";
 
@@ -205,7 +205,6 @@ describe("configToYaml", () => {
           name: "MIERU",
           type: "mieru",
           server: "mieru.example.com",
-          port: 2999,
           username: "user",
           password: "pass",
           transport: "tcp",

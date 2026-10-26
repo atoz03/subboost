@@ -60,6 +60,12 @@ interface UserState {
 
 // 防止并发请求的单例 Promise
 let fetchUserPromise: Promise<void> | null = null;
+let userRequestGeneration = 0;
+
+function invalidateUserRequest() {
+  userRequestGeneration += 1;
+  fetchUserPromise = null;
+}
 
 export const useUserStore = create<UserState>((set) => ({
   user: null,
@@ -69,20 +75,24 @@ export const useUserStore = create<UserState>((set) => ({
   fetchUser: async () => {
     // 防止并发请求
     if (fetchUserPromise) return fetchUserPromise;
+    const generation = userRequestGeneration;
 
     set({ isLoading: true, error: null });
 
     fetchUserPromise = (async () => {
       try {
         const response = await fetch("/api/auth/me", { cache: "no-store" });
+        if (generation !== userRequestGeneration) return;
         if (!response.ok) {
           set({ user: null, error: `请求失败 (HTTP ${response.status})`, isLoading: false });
           return;
         }
         const data = (await response.json().catch(() => ({}))) as AuthSnapshot;
+        if (generation !== userRequestGeneration) return;
         setCsrfToken(data.csrfToken ?? null);
         set({ user: data?.user ?? null, isLoading: false });
       } catch (error) {
+        if (generation !== userRequestGeneration) return;
         setCsrfToken(null);
         set({
           user: null,
@@ -90,7 +100,7 @@ export const useUserStore = create<UserState>((set) => ({
           isLoading: false,
         });
       } finally {
-        fetchUserPromise = null;
+        if (generation === userRequestGeneration) fetchUserPromise = null;
       }
     })();
 
@@ -99,20 +109,32 @@ export const useUserStore = create<UserState>((set) => ({
 
   logout: async () => {
     try {
-      await fetch("/api/auth/logout", {
+      const response = await fetch("/api/auth/logout", {
         method: "POST",
         headers: withCsrfHeaders(),
       });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: unknown };
+        const message =
+          typeof payload.error === "string" && payload.error.trim()
+            ? payload.error
+            : `退出登录失败 (HTTP ${response.status})`;
+        throw new Error(message);
+      }
+      invalidateUserRequest();
       setCsrfToken(null);
-      set({ user: null });
+      set({ user: null, error: null, isLoading: false });
     } catch (error) {
-      console.error("Logout error:", error);
+      const message = error instanceof Error ? error.message : "退出登录失败";
+      set({ error: message });
+      throw error instanceof Error ? error : new Error(message);
     }
   },
 
   clearUser: () => {
+    invalidateUserRequest();
     setCsrfToken(null);
-    set({ user: null, error: null });
+    set({ user: null, error: null, isLoading: false });
   },
 
   updateAiAssistantEnabled: (enabled: boolean) => {

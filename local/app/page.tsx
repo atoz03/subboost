@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { HomeSurface, type HomeSurfaceAdapter } from "@subboost/ui/product/home/home-surface";
 import { buildConfigTransferDocument, parseConfigTransferDocument } from "@local/lib/config-transfer";
 import { useConfigStore } from "@subboost/ui/store/config-store";
